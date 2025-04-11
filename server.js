@@ -3,28 +3,26 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const authRoutes = require('./auth/authRoutes');
 const conectarMongo = require('./config/mongo');
-const testRoutes = require('./routes_generales/testRoutes'); // prueba
+const testRoutes = require('./routes_generales/testRoutes');
 const rutasTransportistas = require('./sql/routes/transportistasRoutes');
 const rutasUsuarios = require('./sql/routes/usuariosRoutes');
 const rutasVehiculos = require('./sql/routes/vehiculosRoutes');
 const rutasTipoTransporte = require('./sql/routes/tipoTransporteRoutes');
 const rutasEnvios = require('./sql/routes/enviosRoutes');
 const rutasRecogidaEntrega = require('./sql/routes/recogidaEntregaRoutes');
-
-
-conectarMongo();
-
-const { poolPromise } = require('./config/sqlserver');
-
 const rutasUbicaciones = require('./mongo/routes/ubicaciones');
 
-const app = express();
-const PORT = 3000;
+conectarMongo();
+const { poolPromise } = require('./config/sqlserver');
 
+const app = express();
+const PORT = process.env.PORT || 3000; // 👈 importante para Render
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+
+// Rutas API
 app.use('/api/auth', authRoutes);
 app.use('/api/vehiculos', rutasVehiculos);
 app.use('/api/recogida-entrega', rutasRecogidaEntrega);
@@ -32,11 +30,12 @@ app.use('/api/tipos-transporte', rutasTipoTransporte);
 app.use('/api/usuarios', rutasUsuarios);
 app.use('/api/transportistas', rutasTransportistas);
 app.use('/api/envios', rutasEnvios);
-app.use('/api/test', testRoutes); // prueba 
+app.use('/api/test', testRoutes);
+app.use('/api/ubicaciones', rutasUbicaciones);
+
 app.post('/api/auth/test', (req, res) => {
   res.json({ mensaje: 'Test OK' });
 });
-app.use('/api/ubicaciones', rutasUbicaciones);
 
 app.get('/api/test-sql', async (req, res) => {
   try {
@@ -54,5 +53,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
 });
