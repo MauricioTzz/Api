@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const Direccion = require('../models/ubicacion');
-const { verificarToken } = require('../auth/jwt');
+const { verificarToken, soloCliente } = require('../../auth/jwt');
 
 // Ruta GET para obtener las ubicaciones del usuario autenticado
 router.get('/', verificarToken, async (req, res) => {
