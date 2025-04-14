@@ -1,41 +1,44 @@
+// routes/ubicaciones.js
 const express = require('express');
 const router = express.Router();
 const Direccion = require('../models/ubicacion');
+const { verificarToken } = require('../auth/jwt');
 
-// Ruta GET para obtener todas las ubicaciones
-router.get('/', async (req, res) => {
+// Ruta GET para obtener las ubicaciones del usuario autenticado
+router.get('/', verificarToken, async (req, res) => {
   try {
-    const ubicaciones = await Direccion.find(); 
-    res.json(ubicaciones); 
+    const ubicaciones = await Direccion.find({ id_usuario: req.usuario.id });
+    res.json(ubicaciones);
   } catch (err) {
     console.error('Error al obtener las ubicaciones:', err);
     res.status(500).json({ error: 'Error al obtener las ubicaciones' });
   }
 });
 
-// Ruta GET para obtener una ubicación por ID
-router.get('/:id', async (req, res) => {
+// Ruta GET para obtener una ubicación por ID (asegurando que sea del usuario)
+router.get('/:id', verificarToken, async (req, res) => {
   try {
-    const ubicacion = await Direccion.findById(req.params.id);
+    const ubicacion = await Direccion.findOne({ _id: req.params.id, id_usuario: req.usuario.id });
     if (!ubicacion) {
       return res.status(404).json({ error: 'Dirección no encontrada' });
     }
-    res.json(ubicacion);  
+    res.json(ubicacion);
   } catch (err) {
     console.error('Error al obtener la dirección:', err);
     res.status(500).json({ error: 'Error al obtener la dirección' });
   }
 });
 
-// Ruta POST para guardar una nueva ubicación
-router.post('/', async (req, res) => {
+// Ruta POST para guardar una nueva ubicación (asociada al usuario)
+router.post('/', verificarToken, async (req, res) => {
   try {
     const nuevaDireccion = new Direccion({
+      id_usuario: req.usuario.id, // ✅ Asociar con el usuario logueado
       nombreOrigen: req.body.nombreOrigen,
       nombreDestino: req.body.nombreDestino,
       coordenadasOrigen: req.body.coordenadasOrigen,
       coordenadasDestino: req.body.coordenadasDestino,
-      rutaGeoJSON: req.body.rutaGeoJSON || undefined  
+      rutaGeoJSON: req.body.rutaGeoJSON || undefined
     });
 
     await nuevaDireccion.save();
@@ -46,13 +49,13 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Ruta PUT para actualizar una ubicación existente
-router.put('/:id', async (req, res) => {
+// Ruta PUT para actualizar una ubicación del usuario
+router.put('/:id', verificarToken, async (req, res) => {
   try {
     const { nombreOrigen, nombreDestino, coordenadasOrigen, coordenadasDestino, rutaGeoJSON } = req.body;
 
-    const direccionActualizada = await Direccion.findByIdAndUpdate(
-      req.params.id,
+    const direccionActualizada = await Direccion.findOneAndUpdate(
+      { _id: req.params.id, id_usuario: req.usuario.id },
       {
         nombreOrigen,
         nombreDestino,
@@ -60,11 +63,11 @@ router.put('/:id', async (req, res) => {
         coordenadasDestino,
         rutaGeoJSON: rutaGeoJSON || null
       },
-      { new: true } 
+      { new: true }
     );
 
     if (!direccionActualizada) {
-      return res.status(404).json({ error: 'Dirección no encontrada' });
+      return res.status(404).json({ error: 'Dirección no encontrada o no autorizada' });
     }
 
     res.json(direccionActualizada);
@@ -74,12 +77,12 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Ruta DELETE para eliminar una ubicación existente
-router.delete('/:id', async (req, res) => {
+// Ruta DELETE para eliminar una ubicación del usuario
+router.delete('/:id', verificarToken, async (req, res) => {
   try {
-    const direccionEliminada = await Direccion.findByIdAndDelete(req.params.id);
+    const direccionEliminada = await Direccion.findOneAndDelete({ _id: req.params.id, id_usuario: req.usuario.id });
     if (!direccionEliminada) {
-      return res.status(404).json({ error: 'Dirección no encontrada' });
+      return res.status(404).json({ error: 'Dirección no encontrada o no autorizada' });
     }
     res.json({ message: 'Dirección eliminada correctamente' });
   } catch (err) {

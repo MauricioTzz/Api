@@ -1,10 +1,10 @@
 const sql = require('mssql');
 
 const config = {
-  user: 'SebastianRE_SQLLogin_1',
-  password: 'f1buyz6wyk',
-  server: 'prueba_proyect.mssql.somee.com',
-  database: 'prueba_proyect',
+  user: process.env.SQL_USER,
+  password: process.env.SQL_PASSWORD,
+  server: process.env.SQL_SERVER,
+  database: process.env.SQL_DATABASE,
   options: {
     encrypt: true,
     trustServerCertificate: true
@@ -14,7 +14,7 @@ const config = {
 const poolPromise = new sql.ConnectionPool(config)
   .connect()
   .then(pool => {
-    console.log('Conectado a SQL Server');
+    console.log('Conectado a SQL Server'); 
     return pool;
   })
   .catch(err => {
