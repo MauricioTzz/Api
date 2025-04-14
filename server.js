@@ -11,7 +11,7 @@ const rutasTipoTransporte = require('./sql/routes/tipoTransporteRoutes');
 const rutasEnvios = require('./sql/routes/enviosRoutes');
 const rutasRecogidaEntrega = require('./sql/routes/recogidaEntregaRoutes');
 const rutasUbicaciones = require('./mongo/routes/ubicaciones');
-const rutaOpenRoute = require('./mongo/routes/rutaOpenRoute');
+
 
 conectarMongo();
 const { poolPromise } = require('./config/sqlserver');
@@ -24,7 +24,6 @@ app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // Rutas API
-app.use('/api', rutaOpenRoute);
 app.use('/api/auth', authRoutes);
 app.use('/api/vehiculos', rutasVehiculos);
 app.use('/api/recogida-entrega', rutasRecogidaEntrega);
