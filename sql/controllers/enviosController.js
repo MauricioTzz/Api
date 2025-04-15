@@ -161,12 +161,33 @@ async function obtenerTodos(req, res) {
     }
 
     const result = await request.query(query);
-    res.json(result.recordset);
+
+    // === Enriquecer con origen y destino desde Mongo
+    const enviosCompletos = await Promise.all(result.recordset.map(async envio => {
+      try {
+        const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
+        if (ubicacion) {
+          envio.nombre_origen = ubicacion.nombreOrigen || "—";
+          envio.nombre_destino = ubicacion.nombreDestino || "—";
+        } else {
+          envio.nombre_origen = "—";
+          envio.nombre_destino = "—";
+        }
+      } catch (err) {
+        console.warn("⚠️ Error buscando ubicación en Mongo:", err.message);
+        envio.nombre_origen = "—";
+        envio.nombre_destino = "—";
+      }
+      return envio;
+    }));
+
+    res.json(enviosCompletos);
   } catch (err) {
     console.error('❌ Error al obtener envíos:', err);
     res.status(500).json({ error: 'Error al obtener envíos' });
   }
 }
+
 
 // 3.- Obtener envío por ID
 async function obtenerPorId(req, res) {
