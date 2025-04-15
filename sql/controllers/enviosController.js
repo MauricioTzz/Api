@@ -128,12 +128,23 @@ async function obtenerTodos(req, res) {
 
     let query = `
       SELECT e.*, 
-             u.nombre AS nombre_usuario, u.apellido AS apellido_usuario, 
-             t.ci AS ci_transportista, t.telefono AS telefono_transportista, 
-             v.placa, v.tipo AS tipo_vehiculo, 
-             r.fecha_recogida, r.hora_recogida, r.hora_entrega,
-             r.instrucciones_recogida, r.instrucciones_entrega,
-             c.tipo AS tipo_carga, c.variedad, c.cantidad, c.empaquetado, c.peso,
+             u.nombre AS nombre_usuario, 
+             u.apellido AS apellido_usuario, 
+             u.rol AS rol_usuario, 
+             t.ci AS ci_transportista, 
+             t.telefono AS telefono_transportista, 
+             v.placa, 
+             v.tipo AS tipo_vehiculo, 
+             r.fecha_recogida, 
+             r.hora_recogida, 
+             r.hora_entrega,
+             r.instrucciones_recogida, 
+             r.instrucciones_entrega,
+             c.tipo AS tipo_carga, 
+             c.variedad, 
+             c.cantidad, 
+             c.empaquetado, 
+             c.peso,
              tp.nombre AS tipo_transporte
       FROM Envios e
       LEFT JOIN Usuarios u ON e.id_usuario = u.id
@@ -297,7 +308,7 @@ async function asignarTransportistaYVehiculo(req, res) {
 }
 
 
-// 5.- Obtener solo mis envios ya sea de Cliente o Admin
+// 5.- Obtener solo mis envíos ya sea de Cliente o Admin
 async function obtenerMisEnvios(req, res) {
   const user = req.usuario || req.user;
 
@@ -314,8 +325,11 @@ async function obtenerMisEnvios(req, res) {
       .input('id_usuario', sql.Int, userId)
       .query(`
         SELECT e.*, 
-               u.nombre AS nombre_usuario, u.apellido AS apellido_usuario, 
-               t.ci AS ci_transportista, t.telefono AS telefono_transportista, 
+               u.nombre AS nombre_usuario, 
+               u.apellido AS apellido_usuario, 
+               u.rol AS rol_usuario,  
+               t.ci AS ci_transportista, 
+               t.telefono AS telefono_transportista, 
                v.placa, v.tipo AS tipo_vehiculo, 
                r.fecha_recogida, r.hora_recogida, r.hora_entrega,
                r.instrucciones_recogida, r.instrucciones_entrega,
@@ -353,6 +367,7 @@ async function obtenerMisEnvios(req, res) {
     res.status(500).json({ error: 'Error al obtener tus envíos' });
   }
 }
+
 
 // 6.- Iniciar viaje (solo transportista asignado)
 async function iniciarViaje(req, res) {
