@@ -156,6 +156,7 @@ async function obtenerTodos(req, res) {
 }
 
 // 3.- Obtener envío por ID
+// 3.- Obtener envío por ID
 async function obtenerPorId(req, res) {
   const envioId = parseInt(req.params.id);
   if (isNaN(envioId)) {
@@ -192,11 +193,27 @@ async function obtenerPorId(req, res) {
 
     const envio = resultado.recordset[0];
 
-    // 🔐 Validación: si no es admin y el envío no le pertenece, denegar acceso
+    // 🔐 Validar propiedad
     if (req.usuario.rol !== 'admin' && envio.id_usuario !== req.usuario.id) {
       return res.status(403).json({ error: 'No tienes permiso para ver este envío' });
     }
-    
+
+    // === 🧠 Cargar detalles de la ubicación desde MongoDB
+    let detallesUbicacion = null;
+    try {
+      detallesUbicacion = await Direccion.findById(envio.id_ubicacion_mongo);
+    } catch (mongoErr) {
+      console.error("⚠️ Error buscando ubicación en Mongo:", mongoErr.message);
+    }
+
+    // Añadir detalles si se encontró
+    if (detallesUbicacion) {
+      envio.nombre_origen = detallesUbicacion.nombreOrigen || "—";
+      envio.nombre_destino = detallesUbicacion.nombreDestino || "—";
+      envio.coordenadas_origen = detallesUbicacion.coordenadasOrigen;
+      envio.coordenadas_destino = detallesUbicacion.coordenadasDestino;
+      envio.rutaGeoJSON = detallesUbicacion.rutaGeoJSON;
+    }
 
     res.json(envio);
   } catch (err) {
@@ -204,6 +221,7 @@ async function obtenerPorId(req, res) {
     res.status(500).json({ error: 'Error al obtener el envío' });
   }
 }
+
 
 // 4.- Asignar transportista y vehículo (solo admin)
 async function asignarTransportistaYVehiculo(req, res) {
