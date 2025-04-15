@@ -1,4 +1,6 @@
 const { sql, poolPromise } = require('../../config/sqlserver');
+const Direccion = require('../../mongo/models/ubicacion');
+
 // 1.- Crear envios completos
 async function crearEnvioCompleto(req, res) {
   const {
@@ -156,7 +158,6 @@ async function obtenerTodos(req, res) {
 }
 
 // 3.- Obtener envío por ID
-// 3.- Obtener envío por ID
 async function obtenerPorId(req, res) {
   const envioId = parseInt(req.params.id);
   if (isNaN(envioId)) {
@@ -193,26 +194,33 @@ async function obtenerPorId(req, res) {
 
     const envio = resultado.recordset[0];
 
-    // 🔐 Validar propiedad
     if (req.usuario.rol !== 'admin' && envio.id_usuario !== req.usuario.id) {
       return res.status(403).json({ error: 'No tienes permiso para ver este envío' });
     }
 
-    // === 🧠 Cargar detalles de la ubicación desde MongoDB
-    let detallesUbicacion = null;
     try {
-      detallesUbicacion = await Direccion.findById(envio.id_ubicacion_mongo);
-    } catch (mongoErr) {
-      console.error("⚠️ Error buscando ubicación en Mongo:", mongoErr.message);
-    }
+      const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo).lean();
 
-    // Añadir detalles si se encontró
-    if (detallesUbicacion) {
-      envio.nombre_origen = detallesUbicacion.nombreOrigen || "—";
-      envio.nombre_destino = detallesUbicacion.nombreDestino || "—";
-      envio.coordenadas_origen = detallesUbicacion.coordenadasOrigen;
-      envio.coordenadas_destino = detallesUbicacion.coordenadasDestino;
-      envio.rutaGeoJSON = detallesUbicacion.rutaGeoJSON;
+      if (ubicacion) {
+        envio.coordenadas_origen = ubicacion.coordenadasOrigen;
+        envio.coordenadas_destino = ubicacion.coordenadasDestino;
+        envio.nombre_origen = ubicacion.nombreOrigen;
+        envio.nombre_destino = ubicacion.nombreDestino;
+        envio.rutaGeoJSON = ubicacion.rutaGeoJSON;
+      } else {
+        envio.coordenadas_origen = null;
+        envio.coordenadas_destino = null;
+        envio.nombre_origen = "—";
+        envio.nombre_destino = "—";
+        envio.rutaGeoJSON = null;
+      }
+    } catch (mongoErr) {
+      console.error("⚠️ Error consultando MongoDB:", mongoErr.message);
+      envio.coordenadas_origen = null;
+      envio.coordenadas_destino = null;
+      envio.nombre_origen = "—";
+      envio.nombre_destino = "—";
+      envio.rutaGeoJSON = null;
     }
 
     res.json(envio);
