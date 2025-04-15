@@ -172,15 +172,17 @@ async function obtenerPorId(req, res) {
       .query(`
         SELECT e.*, 
                u.nombre AS nombre_usuario, u.apellido AS apellido_usuario, 
+               ut.nombre AS nombre_transportista, ut.apellido AS apellido_transportista,
                t.ci AS ci_transportista, t.telefono AS telefono_transportista, 
                v.placa, v.tipo AS tipo_vehiculo, 
+               tp.nombre AS tipo_transporte, tp.descripcion AS descripcion_transporte,
                r.fecha_recogida, r.hora_recogida, r.hora_entrega,
                r.instrucciones_recogida, r.instrucciones_entrega,
-               c.tipo AS tipo_carga, c.variedad, c.cantidad, c.empaquetado, c.peso,
-               tp.nombre AS tipo_transporte
+               c.tipo AS tipo_carga, c.variedad, c.cantidad, c.empaquetado, c.peso
         FROM Envios e
         LEFT JOIN Usuarios u ON e.id_usuario = u.id
         LEFT JOIN Transportistas t ON e.id_transportista = t.id
+        LEFT JOIN Usuarios ut ON t.id_usuario = ut.id
         LEFT JOIN Vehiculos v ON e.id_vehiculo = v.id
         LEFT JOIN RecogidaEntrega r ON e.id_recogida_entrega = r.id
         LEFT JOIN Carga c ON e.id_carga = c.id
@@ -229,6 +231,7 @@ async function obtenerPorId(req, res) {
     res.status(500).json({ error: 'Error al obtener el envío' });
   }
 }
+
 
 
 // 4.- Asignar transportista y vehículo (solo admin)
