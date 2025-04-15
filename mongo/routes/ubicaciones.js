@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const Direccion = require('../models/ubicacion');
 const { verificarToken, soloCliente } = require('../../auth/jwt');
+const { sql, poolPromise } = require('../../config/sqlserver');
 
 // Ruta GET para obtener las ubicaciones del usuario autenticado
 router.get('/', verificarToken, async (req, res) => {
@@ -77,14 +78,39 @@ router.put('/:id', verificarToken, async (req, res) => {
   }
 });
 
-// Ruta DELETE para eliminar una ubicación del usuario
+// Ruta DELETE para eliminar una ubicación del usuario con validación de uso
 router.delete('/:id', verificarToken, async (req, res) => {
+  const idDireccion = req.params.id;
+  const idUsuario = req.usuario.id;
+
   try {
-    const direccionEliminada = await Direccion.findOneAndDelete({ _id: req.params.id, id_usuario: req.usuario.id });
-    if (!direccionEliminada) {
+    // Validar si la dirección pertenece al usuario
+    const direccion = await Direccion.findOne({ _id: idDireccion, id_usuario: idUsuario });
+    if (!direccion) {
       return res.status(404).json({ error: 'Dirección no encontrada o no autorizada' });
     }
+
+    // Verificar si está siendo usada por un envío activo
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('id_mongo', sql.NVarChar, idDireccion)
+      .query(`
+        SELECT COUNT(*) as cantidad 
+        FROM Envios 
+        WHERE id_ubicacion_mongo = @id_mongo 
+        AND estado IN ('Pendiente', 'Asignado', 'En curso')
+      `);
+
+    if (result.recordset[0].cantidad > 0) {
+      return res.status(400).json({
+        error: 'Esta dirección está en uso por un envío activo y no puede eliminarse.'
+      });
+    }
+
+    // Eliminar si no está en uso
+    await Direccion.findByIdAndDelete(idDireccion);
     res.json({ message: 'Dirección eliminada correctamente' });
+
   } catch (err) {
     console.error('Error al eliminar la dirección:', err);
     res.status(500).json({ error: 'Error al eliminar la dirección' });
