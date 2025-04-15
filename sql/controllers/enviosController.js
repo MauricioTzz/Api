@@ -282,19 +282,26 @@ async function obtenerMisEnvios(req, res) {
   try {
     const pool = await poolPromise;
     const resultado = await pool.request()
-      .input('id_usuario', sql.Int, userId)
-      .query(`
-        SELECT e.*, 
-               c.tipo AS tipo_carga, c.variedad, c.cantidad, c.empaquetado, c.peso,
-               r.fecha_recogida, r.hora_recogida, r.hora_entrega,
-               r.instrucciones_recogida, r.instrucciones_entrega,
-               tp.nombre AS tipo_transporte
-        FROM Envios e
-        LEFT JOIN Carga c ON e.id_carga = c.id
-        LEFT JOIN RecogidaEntrega r ON e.id_recogida_entrega = r.id
-        LEFT JOIN TipoTransporte tp ON e.id_tipo_transporte = tp.id
-        WHERE e.id_usuario = @id_usuario
-      `);
+  .input('id_usuario', sql.Int, userId)
+  .query(`
+    SELECT e.*, 
+           u.nombre AS nombre_usuario, u.apellido AS apellido_usuario, 
+           t.ci AS ci_transportista, t.telefono AS telefono_transportista, 
+           v.placa, v.tipo AS tipo_vehiculo, 
+           r.fecha_recogida, r.hora_recogida, r.hora_entrega,
+           r.instrucciones_recogida, r.instrucciones_entrega,
+           c.tipo AS tipo_carga, c.variedad, c.cantidad, c.empaquetado, c.peso,
+           tp.nombre AS tipo_transporte
+    FROM Envios e
+    LEFT JOIN Usuarios u ON e.id_usuario = u.id
+    LEFT JOIN Transportistas t ON e.id_transportista = t.id
+    LEFT JOIN Vehiculos v ON e.id_vehiculo = v.id
+    LEFT JOIN RecogidaEntrega r ON e.id_recogida_entrega = r.id
+    LEFT JOIN Carga c ON e.id_carga = c.id
+    LEFT JOIN TipoTransporte tp ON e.id_tipo_transporte = tp.id
+    WHERE e.id_usuario = @id_usuario
+  `);
+
 
     return res.json(resultado.recordset);
   } catch (err) {
