@@ -1,11 +1,22 @@
 // sql/controllers/transportistasController.js
 const { sql, poolPromise } = require('../../config/sqlserver');
 
-// Obtener todos los transportistas
+// Obtener todos los transportistas (incluye nombre y apellido desde la tabla Usuarios)
 async function obtenerTodos(req, res) {
   try {
     const pool = await poolPromise;
-    const result = await pool.request().query('SELECT * FROM Transportistas');
+    const result = await pool.request().query(`
+      SELECT 
+        t.id,
+        t.id_usuario,
+        t.ci,
+        t.telefono,
+        t.estado,
+        u.nombre,
+        u.apellido
+      FROM Transportistas t
+      LEFT JOIN Usuarios u ON t.id_usuario = u.id
+    `);
     res.json(result.recordset);
   } catch (err) {
     console.error('❌ Error al obtener transportistas:', err);
