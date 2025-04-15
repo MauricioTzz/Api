@@ -471,7 +471,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
   try {
     const pool = await poolPromise;
 
-    // 🔍 Obtener ID del transportista según el usuario logueado
+    // Obtener ID del transportista según el usuario logueado
     const resultTransportista = await pool.request()
       .input('id_usuario', sql.Int, id_usuario)
       .query('SELECT id FROM Transportistas WHERE id_usuario = @id_usuario');
@@ -482,7 +482,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
 
     const id_transportista = resultTransportista.recordset[0].id;
 
-    // ✅ Buscar los envíos asignados a ese transportista
+    // Buscar los envíos asignados a ese transportista
     const result = await pool.request()
       .input('id_transportista', sql.Int, id_transportista)
       .query(`
@@ -498,7 +498,26 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
         WHERE e.id_transportista = @id_transportista
       `);
 
-    res.json(result.recordset);
+    const envios = result.recordset;
+
+    // 🔁 Enriquecer cada envío con coordenadas y nombres desde Mongo
+    const completos = await Promise.all(envios.map(async envio => {
+      try {
+        const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
+        if (ubicacion) {
+          envio.coordenadas_origen = ubicacion.coordenadasOrigen;
+          envio.coordenadas_destino = ubicacion.coordenadasDestino;
+          envio.nombre_origen = ubicacion.nombreOrigen;
+          envio.nombre_destino = ubicacion.nombreDestino;
+          envio.rutaGeoJSON = ubicacion.rutaGeoJSON;
+        }
+      } catch (err) {
+        console.warn("⚠️ Error buscando en Mongo:", err.message);
+      }
+      return envio;
+    }));
+
+    res.json(completos);
   } catch (err) {
     console.error('❌ Error al obtener envíos del transportista:', err);
     res.status(500).json({ error: 'Error interno al obtener los envíos' });
