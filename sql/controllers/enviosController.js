@@ -533,16 +533,19 @@ async function iniciarViaje(req, res) {
       .input('id_envio', sql.Int, asignacion.id_envio)
       .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
 
-    const estados = asignaciones.recordset.map(a => a.estado);
-    let nuevoEstado = 'Asignado';
-
-    if (estados.every(e => e.estado === 'Entregado')) {
-      nuevoEstado = 'Entregado';
-    } else if (estados.some(e => e.estado === 'En curso')) {
-      nuevoEstado = 'En curso';
-    } else if (estados.every(e => e.estado === 'Pendiente')) {
-      nuevoEstado = 'Asignado';
-    }
+      const estados = asignaciones.recordset.map(a => a.estado);
+      let nuevoEstado = 'Asignado';
+      
+      if (estados.length === 0) {
+        nuevoEstado = 'Pendiente';
+      } else if (estados.every(e => e === 'Entregado')) {
+        nuevoEstado = 'Entregado';
+      } else if (estados.some(e => e === 'En curso')) {
+        nuevoEstado = 'En curso';
+      } else if (estados.every(e => e === 'Pendiente')) {
+        nuevoEstado = 'Asignado';
+      }
+      
 
     await pool.request()
       .input('id_envio', sql.Int, asignacion.id_envio)
@@ -711,13 +714,15 @@ async function finalizarEnvio(req, res) {
     const estados = asignaciones.recordset.map(a => a.estado);
     let nuevoEstado = 'Asignado';
 
-    if (estados.every(e => e.estado === 'Entregado')) {
+    if (estados.length === 0) {
+      nuevoEstado = 'Pendiente';
+    } else if (estados.every(e => e === 'Entregado')) {
       nuevoEstado = 'Entregado';
-    } else if (estados.some(e => e.estado === 'En curso')) {
+    } else if (estados.some(e => e === 'En curso')) {
       nuevoEstado = 'En curso';
-    } else if (estados.every(e => e.estado === 'Pendiente')) {
+    } else if (estados.every(e => e === 'Pendiente')) {
       nuevoEstado = 'Asignado';
-    }
+    }    
 
     await pool.request()
       .input('id_envio', sql.Int, asignacion.id_envio)
