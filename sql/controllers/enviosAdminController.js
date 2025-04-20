@@ -68,15 +68,19 @@ async function crearEnvioCompletoAdmin(req, res) {
         return res.status(400).json({ error: `T${id_transportista}, V${id_vehiculo} no disponibles` });
       }
 
-      await pool.request()
+      const asignacionRes = await pool.request()
         .input('id_envio', sql.Int, id_envio)
         .input('id_transportista', sql.Int, id_transportista)
         .input('id_vehiculo', sql.Int, id_vehiculo)
         .input('estado', sql.NVarChar, 'Pendiente')
+        .input('id_tipo_transporte', sql.Int, id_tipo_transporte)
+        .input('id_recogida_entrega', sql.Int, id_recogida_entrega)
         .query(`
-          INSERT INTO AsignacionMultiple (id_envio, id_transportista, id_vehiculo, estado)
-          VALUES (@id_envio, @id_transportista, @id_vehiculo, @estado)
+          INSERT INTO AsignacionMultiple (id_envio, id_transportista, id_vehiculo, estado, id_tipo_transporte, id_recogida_entrega)
+          OUTPUT INSERTED.id VALUES (@id_envio, @id_transportista, @id_vehiculo, @estado, @id_tipo_transporte, @id_recogida_entrega)
         `);
+
+      const id_asignacion = asignacionRes.recordset[0].id;
 
       await pool.request().input('id', sql.Int, id_transportista)
         .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id`);
@@ -97,10 +101,18 @@ async function crearEnvioCompletoAdmin(req, res) {
           `);
 
         const id_carga = cargaRes.recordset[0].id;
+
+        // Relacionar carga con envío (global)
         await pool.request()
           .input('id_envio', sql.Int, id_envio)
           .input('id_carga', sql.Int, id_carga)
           .query(`INSERT INTO EnvioCarga (id_envio, id_carga) VALUES (@id_envio, @id_carga)`);
+
+        // Relacionar carga con asignación específica
+        await pool.request()
+          .input('id_asignacion', sql.Int, id_asignacion)
+          .input('id_carga', sql.Int, id_carga)
+          .query(`INSERT INTO AsignacionCarga (id_asignacion, id_carga) VALUES (@id_asignacion, @id_carga)`);
       }
     }
 
@@ -178,7 +190,7 @@ async function buscarCliente(req, res) {
     }
   }
 
-         // 4.- 
+
   // 4.- 
 async function reutilizarEnvioAnterior(req, res) {
   const id_envio = parseInt(req.params.id_envio);
