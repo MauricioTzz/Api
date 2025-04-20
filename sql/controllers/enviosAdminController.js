@@ -1,7 +1,7 @@
 const { sql, poolPromise } = require('../../config/sqlserver');
 const Direccion = require('../../mongo/models/ubicacion');
 
-    // 1.- 
+   // 1.- 
 async function crearEnvioCompletoAdmin(req, res) {
   try {
     const {
@@ -28,12 +28,12 @@ async function crearEnvioCompletoAdmin(req, res) {
 
     const pool = await poolPromise;
 
-    // 2️⃣ Insertar RecogidaEntrega
+    // 2️⃣ Insertar RecogidaEntrega (⬅️ MODIFICADO aquí)
     const r = recogidaEntrega;
     const recogidaResult = await pool.request()
       .input('fecha_recogida', sql.Date, r.fecha_recogida)
-      .input('hora_recogida', sql.Time, r.hora_recogida)
-      .input('hora_entrega', sql.Time, r.hora_entrega)
+      .input('hora_recogida', sql.Time, new Date(`1970-01-01T${r.hora_recogida}`))
+      .input('hora_entrega', sql.Time, new Date(`1970-01-01T${r.hora_entrega}`))
       .input('instrucciones_recogida', sql.NVarChar, r.instrucciones_recogida || null)
       .input('instrucciones_entrega', sql.NVarChar, r.instrucciones_entrega || null)
       .query(`
