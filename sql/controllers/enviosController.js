@@ -581,8 +581,11 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
     const result = await pool.request()
       .input('id_transportista', sql.Int, id_transportista)
       .query(`
-        SELECT am.*, 
-               e.*, 
+        SELECT am.id AS id_asignacion, 
+               am.estado, am.fecha_inicio, am.fecha_fin, am.fecha_asignacion,
+               am.id_envio, am.id_transportista, am.id_vehiculo,
+               e.id_usuario, e.id_ubicacion_mongo, e.id_recogida_entrega,
+               e.id_tipo_transporte, e.fecha_creacion, e.fecha_entrega,
                r.fecha_recogida, r.hora_recogida, r.hora_entrega,
                r.instrucciones_recogida, r.instrucciones_entrega,
                tp.nombre AS tipo_transporte
@@ -595,17 +598,14 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
 
     const asignaciones = result.recordset;
 
-    // Enriquecer con cargas y Mongo
+    // Enriquecer cada asignación con cargas y ubicación Mongo
     const enviosCompletos = await Promise.all(asignaciones.map(async asignacion => {
-      const envio = {
-        ...asignacion, // contiene campos de asignación + envío
-        id_asignacion: asignacion.id // ID real de AsignacionMultiple
-      };
+      const envio = { ...asignacion };
 
       try {
         // Obtener cargas del envío
         const cargas = await pool.request()
-          .input('id_envio', sql.Int, envio.id)
+          .input('id_envio', sql.Int, asignacion.id_envio)
           .query(`
             SELECT c.*
             FROM EnvioCarga ec
@@ -615,16 +615,16 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
         envio.cargas = cargas.recordset;
 
         // Enriquecer con Mongo
-        const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
+        const ubicacion = await Direccion.findById(asignacion.id_ubicacion_mongo);
         if (ubicacion) {
-          envio.coordenadas_origen = ubicacion.coordenadasOrigen;
-          envio.coordenadas_destino = ubicacion.coordenadasDestino;
           envio.nombre_origen = ubicacion.nombreOrigen;
           envio.nombre_destino = ubicacion.nombreDestino;
+          envio.coordenadas_origen = ubicacion.coordenadasOrigen;
+          envio.coordenadas_destino = ubicacion.coordenadasDestino;
           envio.rutaGeoJSON = ubicacion.rutaGeoJSON;
         }
       } catch (err) {
-        console.warn("⚠️ Error enriqueciendo envío ID:", envio.id, err.message);
+        console.warn("⚠️ Error enriqueciendo envío ID:", asignacion.id_envio, err.message);
       }
 
       return envio;
@@ -637,6 +637,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
     res.status(500).json({ error: 'Error interno al obtener los envíos' });
   }
 }
+
 
 
 // 8.- Finalizar envío (transportista)
