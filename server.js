@@ -12,6 +12,8 @@ const rutasEnvios = require('./sql/routes/enviosRoutes');
 const rutasRecogidaEntrega = require('./sql/routes/recogidaEntregaRoutes');
 const rutasUbicaciones = require('./mongo/routes/ubicaciones');
 
+const rutasEnviosAdmin = require('./sql/routes/enviosAdminRoutes');
+
 
 conectarMongo();
 const { poolPromise } = require('./config/sqlserver');
@@ -33,6 +35,8 @@ app.use('/api/transportistas', rutasTransportistas);
 app.use('/api/envios', rutasEnvios);
 app.use('/api/test', testRoutes);
 app.use('/api/ubicaciones', rutasUbicaciones);
+
+app.use('/api/envios/admin', rutasEnviosAdmin);
 
 app.post('/api/auth/test', (req, res) => {
   res.json({ mensaje: 'Test OK' });

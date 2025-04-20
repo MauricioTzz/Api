@@ -13,7 +13,7 @@ async function crearEnvioCompleto(req, res) {
   } = req.body;
 
   const rol = req.usuario.rol;
-  const id_usuario = req.usuario.id; // ✅ SE OBTIENE DESDE EL TOKEN
+  const id_usuario = req.usuario.id;
 
   if (!id_ubicacion_mongo || !id_tipo_transporte || !carga || !recogidaEntrega) {
     return res.status(400).json({ error: 'Faltan datos requeridos del envío completo' });
@@ -26,84 +26,88 @@ async function crearEnvioCompleto(req, res) {
   try {
     const pool = await poolPromise;
 
-    // ✅ Validar disponibilidad si es admin y asigna transportista/vehículo
+    // ✅ Validar disponibilidad si es admin
     if (rol === 'admin' && id_transportista && id_vehiculo) {
       const [estadoT, estadoV] = await Promise.all([
-        pool.request()
-          .input('id', sql.Int, id_transportista)
+        pool.request().input('id', sql.Int, id_transportista)
           .query(`SELECT estado FROM Transportistas WHERE id = @id`),
-        pool.request()
-          .input('id', sql.Int, id_vehiculo)
+        pool.request().input('id', sql.Int, id_vehiculo)
           .query(`SELECT estado FROM Vehiculos WHERE id = @id`)
       ]);
 
-      const estadoTransportista = estadoT.recordset[0]?.estado;
-      const estadoVehiculo = estadoV.recordset[0]?.estado;
-
-      if (estadoTransportista !== 'Disponible' || estadoVehiculo !== 'Disponible') {
-        return res.status(400).json({ error: '❌ Transportista o vehículo no están disponibles' });
+      if (estadoT.recordset[0]?.estado !== 'Disponible' || estadoV.recordset[0]?.estado !== 'Disponible') {
+        return res.status(400).json({ error: '❌ Transportista o vehículo no disponibles' });
       }
     }
 
-    // Insertar carga
+    // ✅ Insertar carga
     const cargaResult = await pool.request()
       .input('tipo', sql.NVarChar, carga.tipo)
       .input('variedad', sql.NVarChar, carga.variedad)
       .input('cantidad', sql.Int, carga.cantidad)
       .input('empaquetado', sql.NVarChar, carga.empaquetado)
       .input('peso', sql.Decimal(10, 2), carga.peso)
-      .query(`INSERT INTO Carga (tipo, variedad, cantidad, empaquetado, peso)
-              OUTPUT INSERTED.id VALUES (@tipo, @variedad, @cantidad, @empaquetado, @peso)`);
+      .query(`
+        INSERT INTO Carga (tipo, variedad, cantidad, empaquetado, peso)
+        OUTPUT INSERTED.id VALUES (@tipo, @variedad, @cantidad, @empaquetado, @peso)
+      `);
     const id_carga = cargaResult.recordset[0].id;
 
-    // Insertar recogida/entrega
+    // ✅ Insertar recogida/entrega
+    const r = recogidaEntrega;
     const recogidaResult = await pool.request()
-      .input('fecha_recogida', sql.Date, recogidaEntrega.fecha_recogida)
-      .input('hora_recogida', sql.Time, new Date(`1970-01-01T${recogidaEntrega.hora_recogida}`))
-      .input('hora_entrega', sql.Time, new Date(`1970-01-01T${recogidaEntrega.hora_entrega}`))
-      .input('instrucciones_recogida', sql.NVarChar, recogidaEntrega.instrucciones_recogida || null)
-      .input('instrucciones_entrega', sql.NVarChar, recogidaEntrega.instrucciones_entrega || null)
-      .query(`INSERT INTO RecogidaEntrega (fecha_recogida, hora_recogida, hora_entrega, instrucciones_recogida, instrucciones_entrega)
-              OUTPUT INSERTED.id VALUES (@fecha_recogida, @hora_recogida, @hora_entrega, @instrucciones_recogida, @instrucciones_entrega)`);
+      .input('fecha_recogida', sql.Date, r.fecha_recogida)
+      .input('hora_recogida', sql.Time, new Date(`1970-01-01T${r.hora_recogida}`))
+      .input('hora_entrega', sql.Time, new Date(`1970-01-01T${r.hora_entrega}`))
+      .input('instrucciones_recogida', sql.NVarChar, r.instrucciones_recogida || null)
+      .input('instrucciones_entrega', sql.NVarChar, r.instrucciones_entrega || null)
+      .query(`
+        INSERT INTO RecogidaEntrega (fecha_recogida, hora_recogida, hora_entrega, instrucciones_recogida, instrucciones_entrega)
+        OUTPUT INSERTED.id VALUES (@fecha_recogida, @hora_recogida, @hora_entrega, @instrucciones_recogida, @instrucciones_entrega)
+      `);
     const id_recogida_entrega = recogidaResult.recordset[0].id;
 
-    // Insertar envío
-    const envioRequest = pool.request()
+    // ✅ Insertar envío
+    const envioResult = await pool.request()
       .input('id_usuario', sql.Int, id_usuario)
-      .input('id_carga', sql.Int, id_carga)
       .input('id_ubicacion_mongo', sql.NVarChar, id_ubicacion_mongo)
       .input('id_recogida_entrega', sql.Int, id_recogida_entrega)
       .input('id_tipo_transporte', sql.Int, id_tipo_transporte)
-      .input('estado', sql.NVarChar, rol === 'admin' ? 'Asignado' : 'Pendiente');
-
-    if (rol === 'admin') {
-      envioRequest
-        .input('id_transportista', sql.Int, id_transportista || null)
-        .input('id_vehiculo', sql.Int, id_vehiculo || null);
-    } else {
-      envioRequest
-        .input('id_transportista', sql.Int, null)
-        .input('id_vehiculo', sql.Int, null);
-    }
-
-    const envioResult = await envioRequest.query(`
-      INSERT INTO Envios (id_usuario, id_carga, id_ubicacion_mongo, id_transportista, id_vehiculo, id_recogida_entrega, id_tipo_transporte, estado)
-      OUTPUT INSERTED.id VALUES (@id_usuario, @id_carga, @id_ubicacion_mongo, @id_transportista, @id_vehiculo, @id_recogida_entrega, @id_tipo_transporte, @estado)
-    `);
-
+      .input('estado', sql.NVarChar, rol === 'admin' ? 'Asignado' : 'Pendiente')
+      .query(`
+        INSERT INTO Envios (id_usuario, id_ubicacion_mongo, id_recogida_entrega, id_tipo_transporte, estado)
+        OUTPUT INSERTED.id VALUES (@id_usuario, @id_ubicacion_mongo, @id_recogida_entrega, @id_tipo_transporte, @estado)
+      `);
     const id_envio = envioResult.recordset[0].id;
 
-    // ✅ Actualizar estado de transportista y vehículo si fueron asignados
+    // ✅ Insertar en EnvioCarga
+    await pool.request()
+      .input('id_envio', sql.Int, id_envio)
+      .input('id_carga', sql.Int, id_carga)
+      .query(`
+        INSERT INTO EnvioCarga (id_envio, id_carga)
+        VALUES (@id_envio, @id_carga)
+      `);
+
+    // ✅ Insertar en AsignacionMultiple (solo si es admin y asigna)
     if (rol === 'admin' && id_transportista && id_vehiculo) {
       await pool.request()
-        .input('estado', sql.NVarChar, 'No Disponible')
-        .input('id', sql.Int, id_transportista)
-        .query(`UPDATE Transportistas SET estado = @estado WHERE id = @id`);
+        .input('id_envio', sql.Int, id_envio)
+        .input('id_transportista', sql.Int, id_transportista)
+        .input('id_vehiculo', sql.Int, id_vehiculo)
+        .input('estado', sql.NVarChar, 'Pendiente')
+        .query(`
+          INSERT INTO AsignacionMultiple (id_envio, id_transportista, id_vehiculo, estado)
+          VALUES (@id_envio, @id_transportista, @id_vehiculo, @estado)
+        `);
 
       await pool.request()
-        .input('estado', sql.NVarChar, 'No Disponible')
+        .input('id', sql.Int, id_transportista)
+        .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id`);
+
+      await pool.request()
         .input('id', sql.Int, id_vehiculo)
-        .query(`UPDATE Vehiculos SET estado = @estado WHERE id = @id`);
+        .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
     }
 
     res.status(201).json({
@@ -127,31 +131,20 @@ async function obtenerTodos(req, res) {
     const request = pool.request();
 
     let query = `
-      SELECT e.*, 
-             u.nombre AS nombre_usuario, 
-             u.apellido AS apellido_usuario, 
-             u.rol AS rol_usuario, 
-             t.ci AS ci_transportista, 
-             t.telefono AS telefono_transportista, 
-             v.placa, 
-             v.tipo AS tipo_vehiculo, 
-             r.fecha_recogida, 
-             r.hora_recogida, 
-             r.hora_entrega,
-             r.instrucciones_recogida, 
-             r.instrucciones_entrega,
-             c.tipo AS tipo_carga, 
-             c.variedad, 
-             c.cantidad, 
-             c.empaquetado, 
-             c.peso,
-             tp.nombre AS tipo_transporte
+      SELECT 
+        e.*, 
+        u.nombre AS nombre_usuario, 
+        u.apellido AS apellido_usuario, 
+        u.rol AS rol_usuario, 
+        r.fecha_recogida, 
+        r.hora_recogida, 
+        r.hora_entrega,
+        r.instrucciones_recogida, 
+        r.instrucciones_entrega,
+        tp.nombre AS tipo_transporte
       FROM Envios e
       LEFT JOIN Usuarios u ON e.id_usuario = u.id
-      LEFT JOIN Transportistas t ON e.id_transportista = t.id
-      LEFT JOIN Vehiculos v ON e.id_vehiculo = v.id
       LEFT JOIN RecogidaEntrega r ON e.id_recogida_entrega = r.id
-      LEFT JOIN Carga c ON e.id_carga = c.id
       LEFT JOIN TipoTransporte tp ON e.id_tipo_transporte = tp.id
     `;
 
@@ -161,32 +154,68 @@ async function obtenerTodos(req, res) {
     }
 
     const result = await request.query(query);
+    const enviosBase = result.recordset;
 
-    // === Enriquecer con origen y destino desde Mongo
-    const enviosCompletos = await Promise.all(result.recordset.map(async envio => {
+    // 🔁 Enriquecer cada envío con cargas, asignaciones y ubicación
+    const enviosCompletos = await Promise.all(enviosBase.map(async envio => {
       try {
-        const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
-        if (ubicacion) {
-          envio.nombre_origen = ubicacion.nombreOrigen || "—";
-          envio.nombre_destino = ubicacion.nombreDestino || "—";
-        } else {
+        // CARGAS
+        const cargasRes = await pool.request()
+          .input('id_envio', sql.Int, envio.id)
+          .query(`
+            SELECT c.*
+            FROM EnvioCarga ec
+            INNER JOIN Carga c ON ec.id_carga = c.id
+            WHERE ec.id_envio = @id_envio
+          `);
+        envio.cargas = cargasRes.recordset;
+
+        // ASIGNACIONES
+        const asignacionesRes = await pool.request()
+          .input('id_envio', sql.Int, envio.id)
+          .query(`
+            SELECT am.*, 
+                   t.ci AS ci_transportista, 
+                   t.telefono AS telefono_transportista, 
+                   v.placa, 
+                   v.tipo AS tipo_vehiculo
+            FROM AsignacionMultiple am
+            LEFT JOIN Transportistas t ON am.id_transportista = t.id
+            LEFT JOIN Vehiculos v ON am.id_vehiculo = v.id
+            WHERE am.id_envio = @id_envio
+          `);
+        envio.asignaciones = asignacionesRes.recordset;
+
+        // UBICACIÓN (MongoDB)
+        try {
+          const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
+          if (ubicacion) {
+            envio.nombre_origen = ubicacion.nombreOrigen || "—";
+            envio.nombre_destino = ubicacion.nombreDestino || "—";
+          } else {
+            envio.nombre_origen = "—";
+            envio.nombre_destino = "—";
+          }
+        } catch (err) {
           envio.nombre_origen = "—";
           envio.nombre_destino = "—";
         }
-      } catch (err) {
-        console.warn("⚠️ Error buscando ubicación en Mongo:", err.message);
-        envio.nombre_origen = "—";
-        envio.nombre_destino = "—";
+
+      } catch (errInterno) {
+        console.warn("⚠️ Error procesando envío ID:", envio.id, errInterno.message);
       }
+
       return envio;
     }));
 
     res.json(enviosCompletos);
+
   } catch (err) {
     console.error('❌ Error al obtener envíos:', err);
     res.status(500).json({ error: 'Error al obtener envíos' });
   }
 }
+
 
 
 // 3.- Obtener envío por ID
@@ -199,25 +228,18 @@ async function obtenerPorId(req, res) {
   try {
     const pool = await poolPromise;
 
+    // Obtener datos generales del envío
     const resultado = await pool.request()
       .input('id', sql.Int, envioId)
       .query(`
         SELECT e.*, 
-               u.nombre AS nombre_usuario, u.apellido AS apellido_usuario, 
-               ut.nombre AS nombre_transportista, ut.apellido AS apellido_transportista,
-               t.ci AS ci_transportista, t.telefono AS telefono_transportista, 
-               v.placa, v.tipo AS tipo_vehiculo, 
+               u.nombre AS nombre_usuario, u.apellido AS apellido_usuario,
                tp.nombre AS tipo_transporte, tp.descripcion AS descripcion_transporte,
                r.fecha_recogida, r.hora_recogida, r.hora_entrega,
-               r.instrucciones_recogida, r.instrucciones_entrega,
-               c.tipo AS tipo_carga, c.variedad, c.cantidad, c.empaquetado, c.peso
+               r.instrucciones_recogida, r.instrucciones_entrega
         FROM Envios e
         LEFT JOIN Usuarios u ON e.id_usuario = u.id
-        LEFT JOIN Transportistas t ON e.id_transportista = t.id
-        LEFT JOIN Usuarios ut ON t.id_usuario = ut.id
-        LEFT JOIN Vehiculos v ON e.id_vehiculo = v.id
         LEFT JOIN RecogidaEntrega r ON e.id_recogida_entrega = r.id
-        LEFT JOIN Carga c ON e.id_carga = c.id
         LEFT JOIN TipoTransporte tp ON e.id_tipo_transporte = tp.id
         WHERE e.id = @id
       `);
@@ -228,47 +250,61 @@ async function obtenerPorId(req, res) {
 
     const envio = resultado.recordset[0];
 
+    // Validar permisos
     if (req.usuario.rol !== 'admin' && envio.id_usuario !== req.usuario.id) {
       return res.status(403).json({ error: 'No tienes permiso para ver este envío' });
     }
 
+    // Obtener ubicación desde Mongo
     try {
       const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo).lean();
-
       if (ubicacion) {
         envio.coordenadas_origen = ubicacion.coordenadasOrigen;
         envio.coordenadas_destino = ubicacion.coordenadasDestino;
         envio.nombre_origen = ubicacion.nombreOrigen;
         envio.nombre_destino = ubicacion.nombreDestino;
         envio.rutaGeoJSON = ubicacion.rutaGeoJSON;
-      } else {
-        envio.coordenadas_origen = null;
-        envio.coordenadas_destino = null;
-        envio.nombre_origen = "—";
-        envio.nombre_destino = "—";
-        envio.rutaGeoJSON = null;
       }
-    } catch (mongoErr) {
-      console.error("⚠️ Error consultando MongoDB:", mongoErr.message);
-      envio.coordenadas_origen = null;
-      envio.coordenadas_destino = null;
-      envio.nombre_origen = "—";
-      envio.nombre_destino = "—";
-      envio.rutaGeoJSON = null;
+    } catch (errMongo) {
+      console.warn("⚠️ Error obteniendo ubicación:", errMongo.message);
     }
 
-    res.json(envio);
+    // === 🔁 NUEVO: Obtener asignaciones del envío
+    const asignacionesRes = await pool.request()
+      .input('id_envio', sql.Int, envioId)
+      .query(`
+        SELECT am.*, 
+               u.nombre AS nombre_transportista, 
+               u.apellido AS apellido_transportista,
+               v.placa, v.tipo AS tipo_vehiculo
+        FROM AsignacionMultiple am
+        INNER JOIN Transportistas t ON am.id_transportista = t.id
+        INNER JOIN Usuarios u ON t.id_usuario = u.id
+        INNER JOIN Vehiculos v ON am.id_vehiculo = v.id
+        WHERE am.id_envio = @id_envio
+      `);
+
+    envio.asignaciones = asignacionesRes.recordset;
+
+    // Estado resumido (ej: "1 de 2 camiones activos")
+    const total = envio.asignaciones.length;
+    const activos = envio.asignaciones.filter(a => a.estado === 'En curso').length;
+    envio.estado_resumen = `En curso (${activos} de ${total} camiones activos)`;
+
+    return res.json(envio);
+
   } catch (err) {
-    console.error('❌ Error al obtener envío:', err);
-    res.status(500).json({ error: 'Error al obtener el envío' });
+    console.error('❌ Error al obtener envío por ID:', err);
+    return res.status(500).json({ error: 'Error al obtener el envío' });
   }
 }
 
 
 
+
 // 4.- Asignar transportista y vehículo (solo admin)
 async function asignarTransportistaYVehiculo(req, res) {
-  const id = parseInt(req.params.id);
+  const id_envio = parseInt(req.params.id);
   const { id_transportista, id_vehiculo } = req.body;
 
   if (!id_transportista || !id_vehiculo) {
@@ -294,39 +330,43 @@ async function asignarTransportistaYVehiculo(req, res) {
       return res.status(400).json({ error: '❌ Transportista o vehículo no están disponibles' });
     }
 
-    // ✅ Asignar transportista y vehículo al envío
-    const result = await pool.request()
-      .input('id', sql.Int, id)
-      .input('id_transportista', sql.Int, id_transportista)
-      .input('id_vehiculo', sql.Int, id_vehiculo)
-      .input('estado', sql.NVarChar, 'Asignado')
-      .query(`
-        UPDATE Envios 
-        SET id_transportista = @id_transportista, 
-            id_vehiculo = @id_vehiculo, 
-            estado = @estado
-        WHERE id = @id
-      `);
+    // ✅ Verificar si el envío existe
+    const envioExiste = await pool.request()
+      .input('id_envio', sql.Int, id_envio)
+      .query('SELECT id FROM Envios WHERE id = @id_envio');
 
-    if (result.rowsAffected[0] === 0) {
+    if (envioExiste.recordset.length === 0) {
       return res.status(404).json({ error: 'Envío no encontrado' });
     }
 
-    // ✅ Actualizar estado de transportista y vehículo a "No Disponible"
+    // ✅ Insertar asignación
     await pool.request()
+      .input('id_envio', sql.Int, id_envio)
       .input('id_transportista', sql.Int, id_transportista)
-      .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id_transportista`);
+      .input('id_vehiculo', sql.Int, id_vehiculo)
+      .input('estado', sql.NVarChar, 'Pendiente')
+      .query(`
+        INSERT INTO AsignacionMultiple (id_envio, id_transportista, id_vehiculo, estado)
+        VALUES (@id_envio, @id_transportista, @id_vehiculo, @estado)
+      `);
+
+    // ✅ Actualizar estados a No Disponible
+    await pool.request()
+      .input('id', sql.Int, id_transportista)
+      .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id`);
 
     await pool.request()
-      .input('id_vehiculo', sql.Int, id_vehiculo)
-      .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id_vehiculo`);
+      .input('id', sql.Int, id_vehiculo)
+      .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
 
-    res.json({ mensaje: '✅ Envío asignado correctamente y recursos actualizados' });
+    res.json({ mensaje: '✅ Transportista y vehículo asignados correctamente' });
+
   } catch (err) {
     console.error('❌ Error al asignar:', err);
     res.status(500).json({ error: 'Error al asignar transporte' });
   }
 }
+
 
 
 // 5.- Obtener solo mis envíos ya sea de Cliente o Admin
@@ -342,6 +382,8 @@ async function obtenerMisEnvios(req, res) {
 
   try {
     const pool = await poolPromise;
+
+    // 1️⃣ Obtener envíos del usuario
     const resultado = await pool.request()
       .input('id_usuario', sql.Int, userId)
       .query(`
@@ -349,40 +391,68 @@ async function obtenerMisEnvios(req, res) {
                u.nombre AS nombre_usuario, 
                u.apellido AS apellido_usuario, 
                u.rol AS rol_usuario,  
-               t.ci AS ci_transportista, 
-               t.telefono AS telefono_transportista, 
-               v.placa, v.tipo AS tipo_vehiculo, 
                r.fecha_recogida, r.hora_recogida, r.hora_entrega,
                r.instrucciones_recogida, r.instrucciones_entrega,
-               c.tipo AS tipo_carga, c.variedad, c.cantidad, c.empaquetado, c.peso,
                tp.nombre AS tipo_transporte
         FROM Envios e
         LEFT JOIN Usuarios u ON e.id_usuario = u.id
-        LEFT JOIN Transportistas t ON e.id_transportista = t.id
-        LEFT JOIN Vehiculos v ON e.id_vehiculo = v.id
         LEFT JOIN RecogidaEntrega r ON e.id_recogida_entrega = r.id
-        LEFT JOIN Carga c ON e.id_carga = c.id
         LEFT JOIN TipoTransporte tp ON e.id_tipo_transporte = tp.id
         WHERE e.id_usuario = @id_usuario
       `);
 
     const envios = resultado.recordset;
 
-    // 🔁 Enriquecer con nombres desde MongoDB
+    // 2️⃣ Enriquecer con cargas, asignaciones y ubicación (Mongo)
     const enviosCompletos = await Promise.all(envios.map(async envio => {
       try {
-        const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
-        if (ubicacion) {
-          envio.nombre_origen = ubicacion.nombreOrigen || "—";
-          envio.nombre_destino = ubicacion.nombreDestino || "—";
+        // Obtener cargas del envío
+        const cargas = await pool.request()
+          .input('id_envio', sql.Int, envio.id)
+          .query(`
+            SELECT c.*
+            FROM EnvioCarga ec
+            INNER JOIN Carga c ON ec.id_carga = c.id
+            WHERE ec.id_envio = @id_envio
+          `);
+        envio.cargas = cargas.recordset;
+
+        // Obtener asignaciones del envío
+        const asignaciones = await pool.request()
+          .input('id_envio', sql.Int, envio.id)
+          .query(`
+            SELECT am.*, 
+                   t.ci AS ci_transportista,
+                   t.telefono AS telefono_transportista,
+                   v.placa, v.tipo AS tipo_vehiculo
+            FROM AsignacionMultiple am
+            LEFT JOIN Transportistas t ON am.id_transportista = t.id
+            LEFT JOIN Vehiculos v ON am.id_vehiculo = v.id
+            WHERE am.id_envio = @id_envio
+          `);
+        envio.asignaciones = asignaciones.recordset;
+
+        // Obtener ubicación MongoDB
+        try {
+          const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
+          if (ubicacion) {
+            envio.nombre_origen = ubicacion.nombreOrigen || "—";
+            envio.nombre_destino = ubicacion.nombreDestino || "—";
+          }
+        } catch (err) {
+          envio.nombre_origen = "—";
+          envio.nombre_destino = "—";
         }
-      } catch (err) {
-        console.warn("⚠️ Error buscando ubicación en Mongo:", err.message);
+
+      } catch (interno) {
+        console.warn("⚠️ Error enriqueciendo envío ID:", envio.id, interno.message);
       }
+
       return envio;
     }));
 
     return res.json(enviosCompletos);
+
   } catch (err) {
     console.error('❌ Error al obtener tus envíos:', err);
     res.status(500).json({ error: 'Error al obtener tus envíos' });
@@ -390,9 +460,10 @@ async function obtenerMisEnvios(req, res) {
 }
 
 
+
 // 6.- Iniciar viaje (solo transportista asignado)
 async function iniciarViaje(req, res) {
-  const envioId = parseInt(req.params.id);
+  const id_asignacion = parseInt(req.params.id); // ID de AsignacionMultiple
   const userId = req.usuario.id;
   const rol = req.usuario.rol;
 
@@ -403,65 +474,89 @@ async function iniciarViaje(req, res) {
   try {
     const pool = await poolPromise;
 
-    // Verificar si el envío existe y está asignado a este transportista
-    const resultado = await pool.request()
-      .input('id', sql.Int, envioId)
-      .query(`SELECT * FROM Envios WHERE id = @id AND estado = 'Asignado'`);
-
-    if (resultado.recordset.length === 0) {
-      return res.status(404).json({ error: 'El envío no existe o no está en estado asignado' });
-    }
-
-    const envio = resultado.recordset[0];
-
-    // Verificar transportista asignado
-    const transportista = await pool.request()
+    // 1️⃣ Obtener ID de transportista autenticado
+    const transportistaRes = await pool.request()
       .input('id_usuario', sql.Int, userId)
-      .query(`SELECT id FROM Transportistas WHERE id_usuario = @id_usuario`);
+      .query('SELECT id FROM Transportistas WHERE id_usuario = @id_usuario');
 
-    if (transportista.recordset.length === 0) {
+    if (transportistaRes.recordset.length === 0) {
       return res.status(403).json({ error: 'No se encontró al transportista' });
     }
 
-    const id_transportista = transportista.recordset[0].id;
+    const id_transportista = transportistaRes.recordset[0].id;
 
-    if (envio.id_transportista !== id_transportista) {
-      return res.status(403).json({ error: 'No tienes acceso a este envío' });
+    // 2️⃣ Verificar asignación válida
+    const asignacionRes = await pool.request()
+      .input('id_asignacion', sql.Int, id_asignacion)
+      .query(`
+        SELECT * FROM AsignacionMultiple 
+        WHERE id = @id_asignacion AND id_transportista = ${id_transportista} AND estado = 'Pendiente'
+      `);
+
+    if (asignacionRes.recordset.length === 0) {
+      return res.status(403).json({ error: 'No tienes acceso o la asignación no está disponible para iniciar' });
     }
 
-    // ✅ VALIDAR checklist antes de iniciar el viaje
+    const asignacion = asignacionRes.recordset[0];
+
+    // 3️⃣ Verificar checklist por asignación
     const checklistRes = await pool.request()
-      .input('id_envio', sql.Int, envioId)
-      .query(`SELECT id FROM ChecklistCondicionesTransporte WHERE id_envio = @id_envio`);
+      .input('id_asignacion', sql.Int, id_asignacion)
+      .query(`SELECT id FROM ChecklistCondicionesTransporte WHERE id_asignacion = @id_asignacion`);
 
     if (checklistRes.recordset.length === 0) {
       return res.status(400).json({ error: 'Debes completar el checklist antes de iniciar el viaje' });
     }
 
-    // ✅ Iniciar viaje
+    // 4️⃣ Actualizar la asignación como "En curso" y guardar la fecha de inicio
     await pool.request()
       .input('estado', sql.NVarChar, 'En curso')
       .input('fecha_inicio', sql.DateTime, new Date())
-      .input('id', sql.Int, envioId)
-      .query(`UPDATE Envios SET estado = @estado, fecha_inicio = @fecha_inicio WHERE id = @id`);
+      .input('id', sql.Int, id_asignacion)
+      .query(`
+        UPDATE AsignacionMultiple 
+        SET estado = @estado, fecha_inicio = @fecha_inicio 
+        WHERE id = @id
+      `);
+
+    // 5️⃣ Actualizar estado de recursos
+    await pool.request()
+      .input('id', sql.Int, asignacion.id_transportista)
+      .query(`UPDATE Transportistas SET estado = 'En ruta' WHERE id = @id`);
 
     await pool.request()
-      .input('estado', sql.NVarChar, 'En ruta')
-      .input('id', sql.Int, envio.id_transportista)
-      .query(`UPDATE Transportistas SET estado = @estado WHERE id = @id`);
+      .input('id', sql.Int, asignacion.id_vehiculo)
+      .query(`UPDATE Vehiculos SET estado = 'En ruta' WHERE id = @id`);
+
+    // 6️⃣ NUEVO: Actualizar estado global del envío
+    const asignaciones = await pool.request()
+      .input('id_envio', sql.Int, asignacion.id_envio)
+      .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
+
+    const estados = asignaciones.recordset.map(a => a.estado);
+    let nuevoEstado = 'Asignado';
+
+    if (estados.every(e => e.estado === 'Entregado')) {
+      nuevoEstado = 'Entregado';
+    } else if (estados.some(e => e.estado === 'En curso')) {
+      nuevoEstado = 'En curso';
+    } else if (estados.every(e => e.estado === 'Pendiente')) {
+      nuevoEstado = 'Asignado';
+    }
 
     await pool.request()
-      .input('estado', sql.NVarChar, 'En ruta')
-      .input('id', sql.Int, envio.id_vehiculo)
-      .query(`UPDATE Vehiculos SET estado = @estado WHERE id = @id`);
+      .input('id_envio', sql.Int, asignacion.id_envio)
+      .input('estado', sql.NVarChar, nuevoEstado)
+      .query('UPDATE Envios SET estado = @estado WHERE id = @id_envio');
 
-    res.json({ mensaje: '✅ Viaje iniciado correctamente' });
+    res.json({ mensaje: '✅ Viaje iniciado correctamente para esta asignación' });
 
   } catch (err) {
     console.error('❌ Error al iniciar viaje:', err);
     res.status(500).json({ error: 'Error al iniciar el viaje' });
   }
 }
+
 
 
 // 7.- Obtener envíos asignados al transportista autenticado
@@ -471,7 +566,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
   try {
     const pool = await poolPromise;
 
-    // Obtener ID del transportista según el usuario logueado
+    // Obtener ID del transportista autenticado
     const resultTransportista = await pool.request()
       .input('id_usuario', sql.Int, id_usuario)
       .query('SELECT id FROM Transportistas WHERE id_usuario = @id_usuario');
@@ -482,27 +577,44 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
 
     const id_transportista = resultTransportista.recordset[0].id;
 
-    // Buscar los envíos asignados a ese transportista
+    // Obtener asignaciones de este transportista
     const result = await pool.request()
       .input('id_transportista', sql.Int, id_transportista)
       .query(`
-        SELECT e.*, 
-               c.tipo AS tipo_carga, c.variedad, c.cantidad, c.empaquetado, c.peso,
+        SELECT am.*, 
+               e.*, 
                r.fecha_recogida, r.hora_recogida, r.hora_entrega,
                r.instrucciones_recogida, r.instrucciones_entrega,
                tp.nombre AS tipo_transporte
-        FROM Envios e
-        LEFT JOIN Carga c ON e.id_carga = c.id
+        FROM AsignacionMultiple am
+        INNER JOIN Envios e ON am.id_envio = e.id
         LEFT JOIN RecogidaEntrega r ON e.id_recogida_entrega = r.id
         LEFT JOIN TipoTransporte tp ON e.id_tipo_transporte = tp.id
-        WHERE e.id_transportista = @id_transportista
+        WHERE am.id_transportista = @id_transportista
       `);
 
-    const envios = result.recordset;
+    const asignaciones = result.recordset;
 
-    // 🔁 Enriquecer cada envío con coordenadas y nombres desde Mongo
-    const completos = await Promise.all(envios.map(async envio => {
+    // Enriquecer con cargas y Mongo
+    const enviosCompletos = await Promise.all(asignaciones.map(async asignacion => {
+      const envio = {
+        ...asignacion, // contiene campos de asignación + envío
+        id_asignacion: asignacion.id // ID real de AsignacionMultiple
+      };
+
       try {
+        // Obtener cargas del envío
+        const cargas = await pool.request()
+          .input('id_envio', sql.Int, envio.id)
+          .query(`
+            SELECT c.*
+            FROM EnvioCarga ec
+            INNER JOIN Carga c ON ec.id_carga = c.id
+            WHERE ec.id_envio = @id_envio
+          `);
+        envio.cargas = cargas.recordset;
+
+        // Enriquecer con Mongo
         const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
         if (ubicacion) {
           envio.coordenadas_origen = ubicacion.coordenadasOrigen;
@@ -512,29 +624,34 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
           envio.rutaGeoJSON = ubicacion.rutaGeoJSON;
         }
       } catch (err) {
-        console.warn("⚠️ Error buscando en Mongo:", err.message);
+        console.warn("⚠️ Error enriqueciendo envío ID:", envio.id, err.message);
       }
+
       return envio;
     }));
 
-    res.json(completos);
+    res.json(enviosCompletos);
+
   } catch (err) {
     console.error('❌ Error al obtener envíos del transportista:', err);
     res.status(500).json({ error: 'Error interno al obtener los envíos' });
   }
 }
 
+
 // 8.- Finalizar envío (transportista)
 async function finalizarEnvio(req, res) {
-  const envioId = parseInt(req.params.id);
+  const id_asignacion = parseInt(req.params.id);
   const id_usuario = req.usuario.id;
 
-  if (isNaN(envioId)) return res.status(400).json({ error: 'ID inválido' });
+  if (isNaN(id_asignacion)) {
+    return res.status(400).json({ error: 'ID inválido' });
+  }
 
   try {
     const pool = await poolPromise;
 
-    // Obtener ID del transportista autenticado
+    // 1️⃣ Obtener ID del transportista autenticado
     const transportistaRes = await pool.request()
       .input('id_usuario', sql.Int, id_usuario)
       .query(`SELECT id FROM Transportistas WHERE id_usuario = @id_usuario`);
@@ -545,89 +662,117 @@ async function finalizarEnvio(req, res) {
 
     const id_transportista = transportistaRes.recordset[0].id;
 
-    // Obtener envío
-    const envioRes = await pool.request()
-      .input('id', sql.Int, envioId)
-      .query(`SELECT * FROM Envios WHERE id = @id`);
+    // 2️⃣ Obtener asignación
+    const asignacionRes = await pool.request()
+      .input('id', sql.Int, id_asignacion)
+      .query(`SELECT * FROM AsignacionMultiple WHERE id = @id`);
 
-    const envio = envioRes.recordset[0];
-    if (!envio) return res.status(404).json({ error: 'Envío no encontrado' });
-
-    // Validar transportista asignado y estado
-    if (envio.id_transportista !== id_transportista) {
-      return res.status(403).json({ error: 'No tienes permiso para finalizar este envío' });
+    if (asignacionRes.recordset.length === 0) {
+      return res.status(404).json({ error: 'Asignación no encontrada' });
     }
 
-    if (envio.estado !== 'En curso') {
-      return res.status(400).json({ error: 'El envío no está en curso, no puede finalizarse' });
+    const asignacion = asignacionRes.recordset[0];
+
+    // 3️⃣ Validar que le pertenece al transportista y esté en curso
+    if (asignacion.id_transportista !== id_transportista) {
+      return res.status(403).json({ error: 'No tienes permiso para finalizar esta asignación' });
     }
 
-    // Actualizar estado del envío
+    if (asignacion.estado !== 'En curso') {
+      return res.status(400).json({ error: 'Esta asignación no está en curso' });
+    }
+
+    // 4️⃣ Actualizar asignación como finalizada
     await pool.request()
-      .input('id', sql.Int, envioId)
-      .input('fecha_entrega', sql.DateTime, new Date())
+      .input('id', sql.Int, id_asignacion)
+      .input('estado', sql.NVarChar, 'Entregado')
+      .input('fecha_fin', sql.DateTime, new Date())
       .query(`
-        UPDATE Envios 
-        SET estado = 'Entregado', fecha_entrega = @fecha_entrega 
+        UPDATE AsignacionMultiple
+        SET estado = @estado, fecha_fin = @fecha_fin
         WHERE id = @id
       `);
 
-    // Liberar transportista y vehículo
+    // 5️⃣ Liberar transportista y vehículo
     await pool.request()
-      .input('id', sql.Int, envio.id_transportista)
+      .input('id', sql.Int, asignacion.id_transportista)
       .query(`UPDATE Transportistas SET estado = 'Disponible' WHERE id = @id`);
 
     await pool.request()
-      .input('id', sql.Int, envio.id_vehiculo)
+      .input('id', sql.Int, asignacion.id_vehiculo)
       .query(`UPDATE Vehiculos SET estado = 'Disponible' WHERE id = @id`);
 
-    res.json({ mensaje: '✅ Envío finalizado correctamente' });
+    // 6️⃣ ACTUALIZAR ESTADO GLOBAL DEL ENVÍO
+    const asignaciones = await pool.request()
+      .input('id_envio', sql.Int, asignacion.id_envio)
+      .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
+
+    const estados = asignaciones.recordset.map(a => a.estado);
+    let nuevoEstado = 'Asignado';
+
+    if (estados.every(e => e.estado === 'Entregado')) {
+      nuevoEstado = 'Entregado';
+    } else if (estados.some(e => e.estado === 'En curso')) {
+      nuevoEstado = 'En curso';
+    } else if (estados.every(e => e.estado === 'Pendiente')) {
+      nuevoEstado = 'Asignado';
+    }
+
+    await pool.request()
+      .input('id_envio', sql.Int, asignacion.id_envio)
+      .input('estado', sql.NVarChar, nuevoEstado)
+      .query('UPDATE Envios SET estado = @estado WHERE id = @id_envio');
+
+    res.json({ mensaje: '✅ Asignación finalizada correctamente' });
 
   } catch (err) {
-    console.error('❌ Error al finalizar envío:', err);
-    res.status(500).json({ error: 'Error al finalizar el envío' });
+    console.error('❌ Error al finalizar asignación:', err);
+    res.status(500).json({ error: 'Error interno al finalizar asignación' });
   }
 }
 
+
+
 // 9.- Registrar checklist de condiciones antes de iniciar viaje
 async function registrarChecklistCondiciones(req, res) {
-  const id_envio = parseInt(req.params.id);
+  const id_asignacion = parseInt(req.params.id);
   const id_usuario = req.usuario.id;
 
   const checklist = req.body;
 
-  if (isNaN(id_envio)) {
-    return res.status(400).json({ error: 'ID de envío inválido' });
+  if (isNaN(id_asignacion)) {
+    return res.status(400).json({ error: 'ID de asignación inválido' });
   }
 
   try {
     const pool = await poolPromise;
 
-    // Verificar si el usuario es el transportista asignado a ese envío
+    // Verificar si el transportista autenticado corresponde a la asignación
     const validacion = await pool.request()
-      .input('id_envio', sql.Int, id_envio)
+      .input('id', sql.Int, id_asignacion)
       .query(`
-        SELECT e.id_transportista, e.estado, t.id_usuario
-        FROM Envios e
-        INNER JOIN Transportistas t ON e.id_transportista = t.id
-        WHERE e.id = @id_envio
+        SELECT am.*, t.id_usuario
+        FROM AsignacionMultiple am
+        INNER JOIN Transportistas t ON am.id_transportista = t.id
+        WHERE am.id = @id
       `);
 
     const datos = validacion.recordset[0];
-    if (!datos) return res.status(404).json({ error: 'Envío no encontrado o sin transportista asignado' });
+
+    if (!datos) return res.status(404).json({ error: 'Asignación no encontrada' });
 
     if (datos.id_usuario !== id_usuario) {
-      return res.status(403).json({ error: 'No tienes permiso para este envío' });
+      return res.status(403).json({ error: 'No tienes permiso para esta asignación' });
     }
 
-    if (datos.estado !== 'Asignado') {
-      return res.status(400).json({ error: 'El checklist solo se puede llenar si el envío está Asignado' });
+    if (datos.estado !== 'Pendiente') {
+      return res.status(400).json({ error: 'El checklist solo se puede registrar si la asignación está pendiente' });
     }
 
-    // Verificar si ya existe un checklist para este envío
+    // Verificar si ya existe un checklist
     const yaExiste = await pool.request()
-      .input('id_envio', sql.Int, id_envio)
-      .query('SELECT id FROM ChecklistCondicionesTransporte WHERE id_envio = @id_envio');
+      .input('id_asignacion', sql.Int, id_asignacion)
+      .query(`SELECT id FROM ChecklistCondicionesTransporte WHERE id_asignacion = @id_asignacion`);
 
     if (yaExiste.recordset.length > 0) {
       return res.status(400).json({ error: 'Este checklist ya fue registrado' });
@@ -635,7 +780,7 @@ async function registrarChecklistCondiciones(req, res) {
 
     // Insertar checklist
     await pool.request()
-      .input('id_envio', sql.Int, id_envio)
+      .input('id_asignacion', sql.Int, id_asignacion)
       .input('temperatura_controlada', sql.Bit, checklist.temperatura_controlada)
       .input('embalaje_adecuado', sql.Bit, checklist.embalaje_adecuado)
       .input('carga_segura', sql.Bit, checklist.carga_segura)
@@ -649,12 +794,12 @@ async function registrarChecklistCondiciones(req, res) {
       .input('observaciones', sql.NVarChar, checklist.observaciones || null)
       .query(`
         INSERT INTO ChecklistCondicionesTransporte (
-          id_envio, temperatura_controlada, embalaje_adecuado, carga_segura,
+          id_asignacion, temperatura_controlada, embalaje_adecuado, carga_segura,
           vehiculo_limpio, documentos_presentes, ruta_conocida, combustible_completo,
           gps_operativo, comunicacion_funcional, estado_general_aceptable, observaciones
         )
         VALUES (
-          @id_envio, @temperatura_controlada, @embalaje_adecuado, @carga_segura,
+          @id_asignacion, @temperatura_controlada, @embalaje_adecuado, @carga_segura,
           @vehiculo_limpio, @documentos_presentes, @ruta_conocida, @combustible_completo,
           @gps_operativo, @comunicacion_funcional, @estado_general_aceptable, @observaciones
         )
@@ -670,48 +815,55 @@ async function registrarChecklistCondiciones(req, res) {
 
 
 // 10.- Registrar checklist de incidentes luego de finalizar viaje
+// 10.- Registrar checklist de incidentes luego de finalizar viaje
 async function registrarChecklistIncidentes(req, res) {
-  const id_envio = parseInt(req.params.id);
+  const id_asignacion = parseInt(req.params.id); // ahora usamos ID de AsignacionMultiple
   const checklist = req.body;
   const id_usuario = req.usuario.id;
 
-  if (isNaN(id_envio)) {
+  if (isNaN(id_asignacion)) {
     return res.status(400).json({ error: 'ID inválido' });
   }
 
   try {
     const pool = await poolPromise;
 
-    // Validar que el envío existe y está entregado
-    const envioRes = await pool.request()
-      .input('id', sql.Int, id_envio)
-      .query(`SELECT * FROM Envios WHERE id = @id AND estado = 'Entregado'`);
+    // Validar que la asignación exista y pertenezca al transportista autenticado
+    const validacion = await pool.request()
+      .input('id', sql.Int, id_asignacion)
+      .query(`
+        SELECT am.*, t.id_usuario
+        FROM AsignacionMultiple am
+        INNER JOIN Transportistas t ON am.id_transportista = t.id
+        WHERE am.id = @id
+      `);
 
-    const envio = envioRes.recordset[0];
-    if (!envio) return res.status(400).json({ error: 'El envío no está finalizado aún' });
+    const asignacion = validacion.recordset[0];
 
-    // Validar que el usuario sea el transportista asignado
-    const transportistaRes = await pool.request()
-      .input('id_usuario', sql.Int, id_usuario)
-      .query('SELECT id FROM Transportistas WHERE id_usuario = @id_usuario');
-
-    const id_transportista = transportistaRes.recordset[0]?.id;
-    if (envio.id_transportista !== id_transportista) {
-      return res.status(403).json({ error: 'No tienes acceso a este envío' });
+    if (!asignacion) {
+      return res.status(404).json({ error: 'Asignación no encontrada' });
     }
 
-    // Validar si ya existe un checklist
-    const existe = await pool.request()
-      .input('id_envio', sql.Int, id_envio)
-      .query('SELECT id FROM ChecklistIncidentesTransporte WHERE id_envio = @id_envio');
+    if (asignacion.id_usuario !== id_usuario) {
+      return res.status(403).json({ error: 'No tienes permiso para esta asignación' });
+    }
 
-    if (existe.recordset.length > 0) {
+    if (asignacion.estado !== 'Entregado') {
+      return res.status(400).json({ error: 'Solo puedes registrar el checklist si ya finalizaste el viaje' });
+    }
+
+    // Validar si ya existe un checklist de incidentes para esta asignación
+    const yaExiste = await pool.request()
+      .input('id_asignacion', sql.Int, id_asignacion)
+      .query(`SELECT id FROM ChecklistIncidentesTransporte WHERE id_asignacion = @id_asignacion`);
+
+    if (yaExiste.recordset.length > 0) {
       return res.status(400).json({ error: 'El checklist ya fue registrado' });
     }
 
-    // Insertar checklist de incidentes
+    // Insertar el nuevo checklist de incidentes
     await pool.request()
-      .input('id_envio', sql.Int, id_envio)
+      .input('id_asignacion', sql.Int, id_asignacion)
       .input('retraso', sql.Bit, checklist.retraso)
       .input('problema_mecanico', sql.Bit, checklist.problema_mecanico)
       .input('accidente', sql.Bit, checklist.accidente)
@@ -725,13 +877,13 @@ async function registrarChecklistIncidentes(req, res) {
       .input('descripcion_incidente', sql.NVarChar, checklist.descripcion_incidente || null)
       .query(`
         INSERT INTO ChecklistIncidentesTransporte (
-          id_envio, retraso, problema_mecanico, accidente, perdida_carga,
+          id_asignacion, retraso, problema_mecanico, accidente, perdida_carga,
           condiciones_climaticas_adversas, ruta_alternativa_usada,
           contacto_cliente_dificultoso, parada_imprevista, problemas_documentacion,
           otros_incidentes, descripcion_incidente
         )
         VALUES (
-          @id_envio, @retraso, @problema_mecanico, @accidente, @perdida_carga,
+          @id_asignacion, @retraso, @problema_mecanico, @accidente, @perdida_carga,
           @condiciones_climaticas_adversas, @ruta_alternativa_usada,
           @contacto_cliente_dificultoso, @parada_imprevista, @problemas_documentacion,
           @otros_incidentes, @descripcion_incidente
@@ -742,9 +894,41 @@ async function registrarChecklistIncidentes(req, res) {
 
   } catch (err) {
     console.error('❌ Error al guardar checklist de incidentes:', err);
-    res.status(500).json({ error: 'Error interno' });
+    res.status(500).json({ error: 'Error interno al registrar el checklist' });
   }
 }
+
+
+
+
+async function actualizarEstadoGlobalEnvio(id_envio, pool) {
+  // 1️⃣ Obtener todos los estados de las asignaciones del envío
+  const asignaciones = await pool.request()
+    .input('id_envio', sql.Int, id_envio)
+    .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
+
+  const estados = asignaciones.recordset.map(a => a.estado);
+
+  // 2️⃣ Determinar el estado global del envío
+  let nuevoEstado = 'Asignado';
+
+  if (estados.length === 0) {
+    nuevoEstado = 'Pendiente';
+  } else if (estados.every(e => e === 'Entregado')) {
+    nuevoEstado = 'Entregado';
+  } else if (estados.some(e => e === 'En curso')) {
+    nuevoEstado = 'En curso';
+  } else if (estados.every(e => e === 'Pendiente')) {
+    nuevoEstado = 'Asignado';
+  }
+
+  // 3️⃣ Actualizar estado del envío
+  await pool.request()
+    .input('id_envio', sql.Int, id_envio)
+    .input('estado', sql.NVarChar, nuevoEstado)
+    .query(`UPDATE Envios SET estado = @estado WHERE id = @id_envio`);
+}
+
 
 
 module.exports = {
@@ -757,5 +941,6 @@ module.exports = {
   obtenerEnviosAsignadosTransportista,
   finalizarEnvio,
   registrarChecklistCondiciones,
-  registrarChecklistIncidentes
+  registrarChecklistIncidentes,
+  actualizarEstadoGlobalEnvio
 };
