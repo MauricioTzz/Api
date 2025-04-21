@@ -164,6 +164,13 @@ async function obtenerHistorialCliente(req, res) {
   try {
     const pool = await poolPromise;
 
+    // Obtener info del cliente una sola vez
+    const clienteRes = await pool.request()
+      .input('id_usuario', sql.Int, id_usuario)
+      .query(`SELECT nombre, apellido FROM Usuarios WHERE id = @id_usuario`);
+
+    const cliente = clienteRes.recordset[0] || { nombre: '', apellido: '' };
+
     // Obtener todos los envíos de este cliente
     const enviosRes = await pool.request()
       .input('id_usuario', sql.Int, id_usuario)
@@ -175,7 +182,6 @@ async function obtenerHistorialCliente(req, res) {
       `);
 
     const envios = enviosRes.recordset;
-
     const historial = [];
 
     for (const envio of envios) {
@@ -219,8 +225,8 @@ async function obtenerHistorialCliente(req, res) {
           origen,
           destino,
           cliente: {
-            nombre: "Cliente",  // Opcional si lo necesitas mostrar arriba
-            apellido: ""
+            nombre: cliente.nombre,
+            apellido: cliente.apellido
           }
         });
       }
@@ -232,7 +238,6 @@ async function obtenerHistorialCliente(req, res) {
     res.status(500).json({ error: 'Error al obtener historial del cliente' });
   }
 }
-
 
 
   // 4.- Reutilizar envío anterior
