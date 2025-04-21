@@ -726,7 +726,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
   try {
     const pool = await poolPromise;
 
-    // Obtener ID del transportista autenticado
+    // 1️⃣ Obtener ID del transportista autenticado
     const resultTransportista = await pool.request()
       .input('id_usuario', sql.Int, id_usuario)
       .query('SELECT id FROM Transportistas WHERE id_usuario = @id_usuario');
@@ -737,42 +737,47 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
 
     const id_transportista = resultTransportista.recordset[0].id;
 
-    // Obtener asignaciones de este transportista
+    // 2️⃣ Obtener asignaciones de este transportista
     const result = await pool.request()
       .input('id_transportista', sql.Int, id_transportista)
       .query(`
-        SELECT am.id AS id_asignacion, 
-               am.estado, am.fecha_inicio, am.fecha_fin, am.fecha_asignacion,
-               am.id_envio, am.id_transportista, am.id_vehiculo,
-               e.id_usuario, e.id_ubicacion_mongo, e.id_recogida_entrega,
-               e.fecha_creacion, e.fecha_entrega,
-               r.fecha_recogida, r.hora_recogida, r.hora_entrega,
-               r.instrucciones_recogida, r.instrucciones_entrega,
-               tp.nombre AS tipo_transporte, tp.descripcion AS descripcion_transporte
+        SELECT am.id AS id_asignacion, am.estado, am.fecha_inicio, am.fecha_fin, am.fecha_asignacion,
+               am.id_envio, am.id_vehiculo, am.id_recogida_entrega, am.id_tipo_transporte,
+               e.estado AS estado_envio, e.fecha_creacion, e.id_usuario, e.id_ubicacion_mongo,
+               v.placa, v.tipo AS tipo_vehiculo,
+               tp.nombre AS tipo_transporte, tp.descripcion AS descripcion_transporte,
+               u.nombre AS nombre_cliente, u.apellido AS apellido_cliente
         FROM AsignacionMultiple am
         INNER JOIN Envios e ON am.id_envio = e.id
-        LEFT JOIN RecogidaEntrega r ON e.id_recogida_entrega = r.id
-        LEFT JOIN TipoTransporte tp ON e.id_tipo_transporte = tp.id
+        LEFT JOIN Vehiculos v ON am.id_vehiculo = v.id
+        LEFT JOIN TipoTransporte tp ON am.id_tipo_transporte = tp.id
+        LEFT JOIN Usuarios u ON e.id_usuario = u.id
         WHERE am.id_transportista = @id_transportista
       `);
 
     const asignaciones = result.recordset;
 
-    // Enriquecer cada asignación con cargas y ubicación Mongo
+    // 3️⃣ Enriquecer cada asignación
     const enviosCompletos = await Promise.all(asignaciones.map(async asignacion => {
       const envio = { ...asignacion };
 
       try {
-        // Obtener cargas del envío
+        // Obtener cargas específicas de esta asignación
         const cargas = await pool.request()
-          .input('id_envio', sql.Int, asignacion.id_envio)
+          .input('id_asignacion', sql.Int, asignacion.id_asignacion)
           .query(`
             SELECT c.*
-            FROM EnvioCarga ec
-            INNER JOIN Carga c ON ec.id_carga = c.id
-            WHERE ec.id_envio = @id_envio
+            FROM AsignacionCarga ac
+            INNER JOIN Carga c ON ac.id_carga = c.id
+            WHERE ac.id_asignacion = @id_asignacion
           `);
         envio.cargas = cargas.recordset;
+
+        // Obtener datos de recogida/entrega
+        const recogidaRes = await pool.request()
+          .input('id', sql.Int, asignacion.id_recogida_entrega)
+          .query('SELECT * FROM RecogidaEntrega WHERE id = @id');
+        envio.recogidaEntrega = recogidaRes.recordset[0];
 
         // Obtener ubicación MongoDB
         const ubicacion = await Direccion.findById(asignacion.id_ubicacion_mongo);
