@@ -7,7 +7,7 @@ const enviosAdminController = require('../controllers/enviosAdminController');
 router.post('/crear-completo', verificarToken, soloAdmin, enviosAdminController.crearEnvioCompletoAdmin);
 router.get('/buscar-cliente', verificarToken, soloAdmin, enviosAdminController.buscarCliente);
 router.get('/historial/:id_usuario', verificarToken, soloAdmin, enviosAdminController.obtenerHistorialCliente);
-router.post('/reutilizar/:id_envio', verificarToken, soloAdmin, enviosAdminController.reutilizarEnvioAnterior);
+router.get('/reutilizar/:id_envio', verificarToken, soloAdmin, enviosAdminController.reutilizarEnvioAnterior);
 
 
 module.exports = router;
