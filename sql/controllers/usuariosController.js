@@ -75,9 +75,24 @@ async function eliminar(req, res) {
   }
 }
 
+
+// ✅ NUEVA FUNCIÓN: Obtener todos los clientes
+async function obtenerClientes(req, res) {
+  try {
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .query(`SELECT id, nombre, apellido, correo FROM Usuarios WHERE rol = 'cliente'`);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('❌ Error al obtener clientes:', err);
+    res.status(500).json({ error: 'Error al obtener clientes' });
+  }
+}
+
 module.exports = {
   obtenerTodos,
   obtenerPorId,
   editar,
-  eliminar
+  eliminar,
+  obtenerClientes
 };
