@@ -153,7 +153,7 @@ async function buscarCliente(req, res) {
   }
 
 
-   // 3.- Obtener historial completo de envíos de un cliente (con particiones)
+   // 3.- Obtener historial completo de envíos de un cliente (una entrada por envío)
 async function obtenerHistorialCliente(req, res) {
   const id_usuario = parseInt(req.params.id_usuario);
 
@@ -195,41 +195,17 @@ async function obtenerHistorialCliente(req, res) {
         }
       } catch (err) {}
 
-      // Obtener particiones (asignaciones)
-      const asignacionesRes = await pool.request()
-        .input('id_envio', sql.Int, envio.id)
-        .query(`
-          SELECT a.id AS id_asignacion, a.estado, 
-                 r.fecha_recogida, r.hora_recogida, r.hora_entrega,
-                 tp.nombre AS tipo_transporte
-          FROM AsignacionMultiple a
-          LEFT JOIN RecogidaEntrega r ON a.id_recogida_entrega = r.id
-          LEFT JOIN TipoTransporte tp ON a.id_tipo_transporte = tp.id
-          WHERE a.id_envio = @id_envio
-        `);
-
-      for (const asignacion of asignacionesRes.recordset) {
-        historial.push({
-          id_envio: envio.id,
-          estado: asignacion.estado,
-          fecha_creacion: envio.fecha_creacion,
-          tipo_transporte: asignacion.tipo_transporte || "—",
-          recogida: {
-            fecha: asignacion.fecha_recogida || "—",
-            hora: asignacion.hora_recogida || "—"
-          },
-          entrega: {
-            fecha: asignacion.fecha_recogida || "—",
-            hora: asignacion.hora_entrega || "—"
-          },
-          origen,
-          destino,
-          cliente: {
-            nombre: cliente.nombre,
-            apellido: cliente.apellido
-          }
-        });
-      }
+      historial.push({
+        id_envio: envio.id,
+        estado: envio.estado,
+        fecha_creacion: envio.fecha_creacion,
+        origen,
+        destino,
+        cliente: {
+          nombre: cliente.nombre,
+          apellido: cliente.apellido
+        }
+      });
     }
 
     res.json(historial);
