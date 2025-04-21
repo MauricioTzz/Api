@@ -153,38 +153,86 @@ async function buscarCliente(req, res) {
   }
 
 
-    // 3.- 
-  async function obtenerHistorialCliente(req, res) {
-    const id_usuario = parseInt(req.params.id_usuario);
-  
-    if (isNaN(id_usuario)) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-  
-    try {
-      const pool = await poolPromise;
-      const resultado = await pool.request()
-        .input('id_usuario', sql.Int, id_usuario)
-        .query(`
-          SELECT 
-            e.id AS id_envio,
-            e.estado,
-            e.fecha_creacion,
-            r.fecha_recogida, r.hora_recogida, r.hora_entrega,
-            tp.nombre AS tipo_transporte
-          FROM Envios e
-          LEFT JOIN RecogidaEntrega r ON e.id_recogida_entrega = r.id
-          LEFT JOIN TipoTransporte tp ON e.id_tipo_transporte = tp.id
-          WHERE e.id_usuario = @id_usuario
-          ORDER BY e.fecha_creacion DESC
-        `);
-  
-      res.json(resultado.recordset);
-    } catch (err) {
-      console.error('❌ Error al obtener historial del cliente:', err);
-      res.status(500).json({ error: 'Error al obtener historial del cliente' });
-    }
+   // 3.- Obtener historial completo de envíos de un cliente (con particiones)
+async function obtenerHistorialCliente(req, res) {
+  const id_usuario = parseInt(req.params.id_usuario);
+
+  if (isNaN(id_usuario)) {
+    return res.status(400).json({ error: 'ID inválido' });
   }
+
+  try {
+    const pool = await poolPromise;
+
+    // Obtener todos los envíos de este cliente
+    const enviosRes = await pool.request()
+      .input('id_usuario', sql.Int, id_usuario)
+      .query(`
+        SELECT id, estado, id_ubicacion_mongo, fecha_creacion
+        FROM Envios
+        WHERE id_usuario = @id_usuario
+        ORDER BY fecha_creacion DESC
+      `);
+
+    const envios = enviosRes.recordset;
+
+    const historial = [];
+
+    for (const envio of envios) {
+      // Obtener ubicación Mongo
+      let origen = "—", destino = "—";
+      try {
+        const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
+        if (ubicacion) {
+          origen = ubicacion.nombreOrigen;
+          destino = ubicacion.nombreDestino;
+        }
+      } catch (err) {}
+
+      // Obtener particiones (asignaciones)
+      const asignacionesRes = await pool.request()
+        .input('id_envio', sql.Int, envio.id)
+        .query(`
+          SELECT a.id AS id_asignacion, a.estado, 
+                 r.fecha_recogida, r.hora_recogida, r.hora_entrega,
+                 tp.nombre AS tipo_transporte
+          FROM AsignacionMultiple a
+          LEFT JOIN RecogidaEntrega r ON a.id_recogida_entrega = r.id
+          LEFT JOIN TipoTransporte tp ON a.id_tipo_transporte = tp.id
+          WHERE a.id_envio = @id_envio
+        `);
+
+      for (const asignacion of asignacionesRes.recordset) {
+        historial.push({
+          id_envio: envio.id,
+          estado: asignacion.estado,
+          fecha_creacion: envio.fecha_creacion,
+          tipo_transporte: asignacion.tipo_transporte || "—",
+          recogida: {
+            fecha: asignacion.fecha_recogida || "—",
+            hora: asignacion.hora_recogida || "—"
+          },
+          entrega: {
+            fecha: asignacion.fecha_recogida || "—",
+            hora: asignacion.hora_entrega || "—"
+          },
+          origen,
+          destino,
+          cliente: {
+            nombre: "Cliente",  // Opcional si lo necesitas mostrar arriba
+            apellido: ""
+          }
+        });
+      }
+    }
+
+    res.json(historial);
+  } catch (err) {
+    console.error('❌ Error al obtener historial del cliente:', err);
+    res.status(500).json({ error: 'Error al obtener historial del cliente' });
+  }
+}
+
 
 
   // 4.- Reutilizar envío anterior
