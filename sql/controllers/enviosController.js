@@ -55,14 +55,6 @@ async function crearEnvioCompleto(req, res) {
 
       const id_carga = cargaResult.recordset[0].id;
 
-      await pool.request()
-        .input('id_envio', sql.Int, id_envio)
-        .input('id_carga', sql.Int, id_carga)
-        .query(`
-          INSERT INTO EnvioCarga (id_envio, id_carga)
-          VALUES (@id_envio, @id_carga)
-        `);
-
       // ✅ Insertar recogidaEntrega
       const r = recogidaEntrega;
       const recogidaResult = await pool.request()
@@ -95,7 +87,7 @@ async function crearEnvioCompleto(req, res) {
           return res.status(400).json({ error: 'Transportista o vehículo no disponibles para una partición' });
         }
 
-        await pool.request()
+        const asignacionResult = await pool.request()
           .input('id_envio', sql.Int, id_envio)
           .input('id_transportista', sql.Int, id_transportista)
           .input('id_vehiculo', sql.Int, id_vehiculo)
@@ -104,14 +96,24 @@ async function crearEnvioCompleto(req, res) {
           .input('id_recogida_entrega', sql.Int, id_recogida_entrega)
           .query(`
             INSERT INTO AsignacionMultiple (id_envio, id_transportista, id_vehiculo, estado, id_tipo_transporte, id_recogida_entrega)
-            VALUES (@id_envio, @id_transportista, @id_vehiculo, @estado, @id_tipo_transporte, @id_recogida_entrega)
+            OUTPUT INSERTED.id VALUES (@id_envio, @id_transportista, @id_vehiculo, @estado, @id_tipo_transporte, @id_recogida_entrega)
           `);
+
+        const id_asignacion = asignacionResult.recordset[0].id;
 
         await pool.request().input('id', sql.Int, id_transportista)
           .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id`);
 
         await pool.request().input('id', sql.Int, id_vehiculo)
           .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
+
+        await pool.request()
+          .input('id_asignacion', sql.Int, id_asignacion)
+          .input('id_carga', sql.Int, id_carga)
+          .query(`
+            INSERT INTO AsignacionCarga (id_asignacion, id_carga)
+            VALUES (@id_asignacion, @id_carga)
+          `);
       }
     }
 
@@ -125,6 +127,7 @@ async function crearEnvioCompleto(req, res) {
     res.status(500).json({ error: 'Error al crear envío completo' });
   }
 }
+
 
 
 // 2.- Obtener todos los envíos

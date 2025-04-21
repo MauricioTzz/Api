@@ -17,7 +17,7 @@ async function crearEnvioCompletoAdmin(req, res) {
 
     const pool = await poolPromise;
 
-    // 2️⃣ Insertar envío principal (sin recogida/entrega ni tipo transporte)
+    // 2️⃣ Insertar envío principal
     const envioResult = await pool.request()
       .input('id_usuario', sql.Int, id_usuario_cliente)
       .input('id_ubicacion_mongo', sql.NVarChar, id_ubicacion_mongo)
@@ -29,7 +29,7 @@ async function crearEnvioCompletoAdmin(req, res) {
 
     const id_envio = envioResult.recordset[0].id;
 
-    // 3️⃣ Procesar cada bloque/partición
+    // 3️⃣ Procesar cada partición
     for (const bloque of particiones) {
       const { cargas, recogidaEntrega, id_tipo_transporte, id_transportista, id_vehiculo } = bloque;
 
@@ -67,7 +67,7 @@ async function crearEnvioCompletoAdmin(req, res) {
         return res.status(400).json({ error: `T${id_transportista}, V${id_vehiculo} no disponibles` });
       }
 
-      // 6️⃣ Insertar asignación
+      // 6️⃣ Insertar Asignación
       const asignacionRes = await pool.request()
         .input('id_envio', sql.Int, id_envio)
         .input('id_transportista', sql.Int, id_transportista)
@@ -88,7 +88,7 @@ async function crearEnvioCompletoAdmin(req, res) {
       await pool.request().input('id', sql.Int, id_vehiculo)
         .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
 
-      // 8️⃣ Registrar cargas
+      // 8️⃣ Insertar cargas + asignación
       for (const carga of cargas) {
         const cargaRes = await pool.request()
           .input('tipo', sql.NVarChar, carga.tipo)
@@ -103,13 +103,7 @@ async function crearEnvioCompletoAdmin(req, res) {
 
         const id_carga = cargaRes.recordset[0].id;
 
-        // Relacionar con envío (global)
-        await pool.request()
-          .input('id_envio', sql.Int, id_envio)
-          .input('id_carga', sql.Int, id_carga)
-          .query(`INSERT INTO EnvioCarga (id_envio, id_carga) VALUES (@id_envio, @id_carga)`);
-
-        // Relacionar con asignación
+        // 🔗 Relacionar carga con asignación (única relación activa)
         await pool.request()
           .input('id_asignacion', sql.Int, id_asignacion)
           .input('id_carga', sql.Int, id_carga)
@@ -127,6 +121,7 @@ async function crearEnvioCompletoAdmin(req, res) {
     return res.status(500).json({ error: 'Error interno al crear envío (admin)' });
   }
 }
+
 
     // 2.- 
 async function buscarCliente(req, res) {
