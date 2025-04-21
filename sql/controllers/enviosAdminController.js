@@ -10,27 +10,26 @@ async function crearEnvioCompletoAdmin(req, res) {
       return res.status(400).json({ error: 'Faltan datos para crear el envío' });
     }
 
+    // 1️⃣ Guardar ubicación MongoDB
     const nuevaUbicacion = new Direccion({ ...ubicacion, id_usuario: id_usuario_cliente });
     await nuevaUbicacion.save();
     const id_ubicacion_mongo = nuevaUbicacion._id.toString();
 
     const pool = await poolPromise;
 
-    // Crear envío principal
+    // 2️⃣ Insertar envío principal (sin recogida/entrega ni tipo transporte)
     const envioResult = await pool.request()
       .input('id_usuario', sql.Int, id_usuario_cliente)
       .input('id_ubicacion_mongo', sql.NVarChar, id_ubicacion_mongo)
-      .input('id_recogida_entrega', sql.Int, null)
-      .input('id_tipo_transporte', sql.Int, null)
       .input('estado', sql.NVarChar, 'Asignado')
       .query(`
-        INSERT INTO Envios (id_usuario, id_ubicacion_mongo, id_recogida_entrega, id_tipo_transporte, estado)
-        OUTPUT INSERTED.id VALUES (@id_usuario, @id_ubicacion_mongo, @id_recogida_entrega, @id_tipo_transporte, @estado)
+        INSERT INTO Envios (id_usuario, id_ubicacion_mongo, estado)
+        OUTPUT INSERTED.id VALUES (@id_usuario, @id_ubicacion_mongo, @estado)
       `);
 
     const id_envio = envioResult.recordset[0].id;
 
-    // Procesar cada partición
+    // 3️⃣ Procesar cada bloque/partición
     for (const bloque of particiones) {
       const { cargas, recogidaEntrega, id_tipo_transporte, id_transportista, id_vehiculo } = bloque;
 
@@ -38,7 +37,7 @@ async function crearEnvioCompletoAdmin(req, res) {
         return res.status(400).json({ error: 'Faltan datos en una de las particiones del envío' });
       }
 
-      // Insertar RecogidaEntrega por partición
+      // 4️⃣ Insertar RecogidaEntrega
       const r = recogidaEntrega;
       const recogidaResult = await pool.request()
         .input('fecha_recogida', sql.Date, r.fecha_recogida)
@@ -53,7 +52,7 @@ async function crearEnvioCompletoAdmin(req, res) {
 
       const id_recogida_entrega = recogidaResult.recordset[0].id;
 
-      // Registrar asignación
+      // 5️⃣ Verificar disponibilidad
       const validacion = await pool.request()
         .input('t', sql.Int, id_transportista)
         .input('v', sql.Int, id_vehiculo)
@@ -68,6 +67,7 @@ async function crearEnvioCompletoAdmin(req, res) {
         return res.status(400).json({ error: `T${id_transportista}, V${id_vehiculo} no disponibles` });
       }
 
+      // 6️⃣ Insertar asignación
       const asignacionRes = await pool.request()
         .input('id_envio', sql.Int, id_envio)
         .input('id_transportista', sql.Int, id_transportista)
@@ -82,12 +82,13 @@ async function crearEnvioCompletoAdmin(req, res) {
 
       const id_asignacion = asignacionRes.recordset[0].id;
 
+      // 7️⃣ Marcar transportista y vehículo como no disponibles
       await pool.request().input('id', sql.Int, id_transportista)
         .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id`);
       await pool.request().input('id', sql.Int, id_vehiculo)
         .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
 
-      // Registrar cargas y relaciones
+      // 8️⃣ Registrar cargas
       for (const carga of cargas) {
         const cargaRes = await pool.request()
           .input('tipo', sql.NVarChar, carga.tipo)
@@ -102,13 +103,13 @@ async function crearEnvioCompletoAdmin(req, res) {
 
         const id_carga = cargaRes.recordset[0].id;
 
-        // Relacionar carga con envío (global)
+        // Relacionar con envío (global)
         await pool.request()
           .input('id_envio', sql.Int, id_envio)
           .input('id_carga', sql.Int, id_carga)
           .query(`INSERT INTO EnvioCarga (id_envio, id_carga) VALUES (@id_envio, @id_carga)`);
 
-        // Relacionar carga con asignación específica
+        // Relacionar con asignación
         await pool.request()
           .input('id_asignacion', sql.Int, id_asignacion)
           .input('id_carga', sql.Int, id_carga)
@@ -191,7 +192,7 @@ async function buscarCliente(req, res) {
   }
 
 
-  // 4.- 
+  // 4.- Reutilizar envío anterior
 async function reutilizarEnvioAnterior(req, res) {
   const id_envio = parseInt(req.params.id_envio);
 
@@ -203,28 +204,24 @@ async function reutilizarEnvioAnterior(req, res) {
     const pool = await poolPromise;
 
     // Obtener datos básicos del envío
-    const envio = await pool.request()
+    const envioRes = await pool.request()
       .input('id', sql.Int, id_envio)
-      .query(`
-        SELECT *
-        FROM Envios
-        WHERE id = @id
-      `);
+      .query(`SELECT * FROM Envios WHERE id = @id`);
 
-    if (envio.recordset.length === 0) {
+    if (envioRes.recordset.length === 0) {
       return res.status(404).json({ error: 'Envío no encontrado' });
     }
 
-    const envioData = envio.recordset[0];
+    const envio = envioRes.recordset[0];
 
-    // Obtener ubicación desde Mongo
-    const direccion = await Direccion.findById(envioData.id_ubicacion_mongo);
+    // Obtener ubicación desde MongoDB
+    const direccion = await Direccion.findById(envio.id_ubicacion_mongo);
 
-    // Obtener todas las asignaciones del envío
+    // Obtener asignaciones del envío
     const asignaciones = await pool.request()
       .input('id_envio', sql.Int, id_envio)
       .query(`
-        SELECT a.id AS id_asignacion, a.id_recogida_entrega, a.id_tipo_transporte,
+        SELECT a.id AS id_asignacion, a.id_tipo_transporte, a.id_recogida_entrega,
                r.fecha_recogida, r.hora_recogida, r.hora_entrega,
                r.instrucciones_recogida, r.instrucciones_entrega,
                t.nombre AS tipo_transporte_nombre, t.descripcion AS tipo_transporte_descripcion
@@ -237,12 +234,14 @@ async function reutilizarEnvioAnterior(req, res) {
     const particiones = [];
 
     for (const asignacion of asignaciones.recordset) {
-      const cargas = await pool.request()
+      // Obtener cargas específicas de esta asignación
+      const cargasRes = await pool.request()
         .input('id_asignacion', sql.Int, asignacion.id_asignacion)
         .query(`
-          SELECT c.* FROM Carga c
-          INNER JOIN EnvioCarga ec ON ec.id_carga = c.id
-          WHERE ec.id_asignacion = @id_asignacion
+          SELECT c.*
+          FROM AsignacionCarga ac
+          INNER JOIN Carga c ON ac.id_carga = c.id
+          WHERE ac.id_asignacion = @id_asignacion
         `);
 
       particiones.push({
@@ -258,13 +257,14 @@ async function reutilizarEnvioAnterior(req, res) {
           instrucciones_recogida: asignacion.instrucciones_recogida,
           instrucciones_entrega: asignacion.instrucciones_entrega
         },
-        cargas: cargas.recordset
+        cargas: cargasRes.recordset
       });
     }
 
-    res.json({
+    // Enviar estructura reutilizable
+    return res.json({
       ubicacion: direccion,
-      id_usuario_cliente: envioData.id_usuario,
+      id_usuario_cliente: envio.id_usuario,
       particiones
     });
 
@@ -273,6 +273,7 @@ async function reutilizarEnvioAnterior(req, res) {
     res.status(500).json({ error: 'Error al obtener datos del envío' });
   }
 }
+
 
   
 
