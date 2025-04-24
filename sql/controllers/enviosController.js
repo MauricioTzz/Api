@@ -306,6 +306,8 @@ async function obtenerPorId(req, res) {
         SELECT am.*, 
                u.nombre AS nombre_transportista, 
                u.apellido AS apellido_transportista,
+               t.ci AS ci_transportista,
+               t.telefono AS telefono_transportista,
                v.placa, v.tipo AS tipo_vehiculo,
                tp.nombre AS nombre_tipo_transporte,
                tp.descripcion AS descripcion_tipo_transporte,
@@ -321,7 +323,6 @@ async function obtenerPorId(req, res) {
       `);
 
     const asignaciones = await Promise.all(asignacionesRes.recordset.map(async asignacion => {
-      // Cargas específicas para esta asignación
       const cargas = await pool.request()
         .input('id_asignacion', sql.Int, asignacion.id)
         .query(`
@@ -339,7 +340,9 @@ async function obtenerPorId(req, res) {
         fecha_fin: asignacion.fecha_fin,
         transportista: {
           nombre: asignacion.nombre_transportista,
-          apellido: asignacion.apellido_transportista
+          apellido: asignacion.apellido_transportista,
+          telefono: asignacion.telefono_transportista,
+          ci: asignacion.ci_transportista
         },
         vehiculo: {
           placa: asignacion.placa,
@@ -362,7 +365,6 @@ async function obtenerPorId(req, res) {
 
     envio.particiones = asignaciones;
 
-    // Estado resumido (ej: "1 de 2 camiones activos")
     const total = asignaciones.length;
     const activos = asignaciones.filter(a => a.estado === 'En curso').length;
     envio.estado_resumen = `En curso (${activos} de ${total} camiones activos)`;
@@ -374,6 +376,7 @@ async function obtenerPorId(req, res) {
     return res.status(500).json({ error: 'Error al obtener el envío' });
   }
 }
+
 
 
 
