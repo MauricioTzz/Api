@@ -11,6 +11,7 @@ const rutasTipoTransporte = require('./sql/routes/tipoTransporteRoutes');
 const rutasEnvios = require('./sql/routes/enviosRoutes');
 const rutasRecogidaEntrega = require('./sql/routes/recogidaEntregaRoutes');
 const rutasUbicaciones = require('./mongo/routes/ubicaciones');
+const rutasFirmasEnvio = require('./mongo/routes/firmaEnvioRoutes');
 
 const rutasEnviosAdmin = require('./sql/routes/enviosAdminRoutes');
 
@@ -37,6 +38,8 @@ app.use('/api/test', testRoutes);
 app.use('/api/ubicaciones', rutasUbicaciones);
 
 app.use('/api/envios/admin', rutasEnviosAdmin);
+app.use('/api/envios', rutasFirmasEnvio);
+
 
 app.post('/api/auth/test', (req, res) => {
   res.json({ mensaje: 'Test OK' });
