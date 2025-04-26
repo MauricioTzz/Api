@@ -13,6 +13,7 @@ router.put('/asignar/:id', verificarToken, soloAdmin, controller.asignarTranspor
 router.put('/iniciar/:id', verificarToken, controller.iniciarViaje);
 router.put('/finalizar/:id', verificarToken, controller.finalizarEnvio);
 router.put('/:id/estado-global', verificarToken, soloAdmin, controller.actualizarEstadoGlobalEnvio);
+router.get('/documento/:id_envio', verificarToken, controller.generarDocumentoEnvio);
 router.get('/', verificarToken, soloAdmin, controller.obtenerTodos);
 router.post('/:id/checklist-condiciones', verificarToken, controller.registrarChecklistCondiciones);
 router.post('/:id/checklist-incidentes', verificarToken, controller.registrarChecklistIncidentes);

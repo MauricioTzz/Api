@@ -1124,6 +1124,145 @@ async function actualizarEstadoGlobalEnvio(id_envio, pool) {
 
 
 
+// 11. Endpoint: Generar Documento de Envío completo
+async function generarDocumentoEnvio(req, res) {
+  const id_envio = parseInt(req.params.id_envio);
+  const rol = req.usuario.rol; // Rol viene del token
+  const id_usuario = req.usuario.id;
+
+  if (isNaN(id_envio)) {
+    return res.status(400).json({ error: 'ID inválido' });
+  }
+
+  try {
+    const pool = await poolPromise;
+
+    // 1️⃣ Obtener datos del envío
+    const envioRes = await pool.request()
+      .input('id', sql.Int, id_envio)
+      .query(`
+        SELECT e.*, u.nombre AS nombre_cliente, u.apellido AS apellido_cliente
+        FROM Envios e
+        INNER JOIN Usuarios u ON e.id_usuario = u.id
+        WHERE e.id = @id
+      `);
+
+    if (envioRes.recordset.length === 0) {
+      return res.status(404).json({ error: 'Envío no encontrado' });
+    }
+
+    const envio = envioRes.recordset[0];
+
+    // Validar si cliente tiene permiso (si no es admin)
+    if (rol !== 'admin' && envio.id_usuario !== id_usuario) {
+      return res.status(403).json({ error: 'No tienes acceso a este envío' });
+    }
+
+    // 2️⃣ Obtener ubicación (MongoDB)
+    let ubicacion = null;
+    try {
+      ubicacion = await Direccion.findById(envio.id_ubicacion_mongo).lean();
+    } catch (errMongo) {
+      console.warn('⚠️ Error obteniendo ubicación MongoDB:', errMongo.message);
+    }
+
+    // 3️⃣ Obtener particiones (asignaciones)
+    const asignacionesRes = await pool.request()
+      .input('id_envio', sql.Int, id_envio)
+      .query(`
+        SELECT am.*, 
+               u.nombre AS nombre_transportista, u.apellido AS apellido_transportista,
+               t.ci AS ci_transportista, t.telefono AS telefono_transportista,
+               v.placa, v.tipo AS tipo_vehiculo,
+               tp.nombre AS nombre_tipo_transporte, tp.descripcion AS descripcion_tipo_transporte
+        FROM AsignacionMultiple am
+        LEFT JOIN Transportistas t ON am.id_transportista = t.id
+        LEFT JOIN Usuarios u ON t.id_usuario = u.id
+        LEFT JOIN Vehiculos v ON am.id_vehiculo = v.id
+        LEFT JOIN TipoTransporte tp ON am.id_tipo_transporte = tp.id
+        WHERE am.id_envio = @id_envio
+      `);
+
+    const asignaciones = asignacionesRes.recordset;
+
+    // 4️⃣ Obtener cargas, checklist, firmas por cada asignación
+    const particiones = await Promise.all(asignaciones.map(async asignacion => {
+      // Obtener cargas
+      const cargasRes = await pool.request()
+        .input('id_asignacion', sql.Int, asignacion.id)
+        .query(`
+          SELECT c.*
+          FROM AsignacionCarga ac
+          INNER JOIN Carga c ON ac.id_carga = c.id
+          WHERE ac.id_asignacion = @id_asignacion
+        `);
+
+      // Obtener firma
+      const firma = await FirmaEnvio.findOne({ id_asignacion: asignacion.id }).lean();
+
+      // Obtener checklist (solo si es admin)
+      let checklistCondiciones = null;
+      let checklistIncidentes = null;
+
+      if (rol === 'admin') {
+        const condicionesRes = await pool.request()
+          .input('id_asignacion', sql.Int, asignacion.id)
+          .query(`SELECT * FROM ChecklistCondicionesTransporte WHERE id_asignacion = @id_asignacion`);
+        checklistCondiciones = condicionesRes.recordset[0] || null;
+
+        const incidentesRes = await pool.request()
+          .input('id_asignacion', sql.Int, asignacion.id)
+          .query(`SELECT * FROM ChecklistIncidentesTransporte WHERE id_asignacion = @id_asignacion`);
+        checklistIncidentes = incidentesRes.recordset[0] || null;
+      }
+
+      return {
+        id_asignacion: asignacion.id,
+        estado: asignacion.estado,
+        fecha_asignacion: asignacion.fecha_asignacion,
+        fecha_inicio: asignacion.fecha_inicio,
+        fecha_fin: asignacion.fecha_fin,
+        transportista: {
+          nombre: asignacion.nombre_transportista,
+          apellido: asignacion.apellido_transportista,
+          telefono: asignacion.telefono_transportista,
+          ci: asignacion.ci_transportista
+        },
+        vehiculo: {
+          placa: asignacion.placa,
+          tipo: asignacion.tipo_vehiculo
+        },
+        tipo_transporte: {
+          nombre: asignacion.nombre_tipo_transporte,
+          descripcion: asignacion.descripcion_tipo_transporte
+        },
+        cargas: cargasRes.recordset,
+        firma: firma ? firma.imagenFirma : null,
+        checklistCondiciones,
+        checklistIncidentes
+      };
+    }));
+
+    // 5️⃣ Preparar respuesta
+    res.json({
+      id_envio: envio.id,
+      nombre_cliente: `${envio.nombre_cliente} ${envio.apellido_cliente}`,
+      estado: envio.estado,
+      fecha_creacion: envio.fecha_creacion,
+      fecha_inicio: envio.fecha_inicio,
+      fecha_entrega: envio.fecha_entrega,
+      nombre_origen: ubicacion?.nombreOrigen || '—',
+      nombre_destino: ubicacion?.nombreDestino || '—',
+      particiones
+    });
+
+  } catch (error) {
+    console.error('❌ Error al generar documento:', error);
+    res.status(500).json({ error: 'Error interno al generar documento' });
+  }
+}
+
+
 module.exports = {
   crearEnvioCompleto,
   obtenerTodos,
@@ -1135,5 +1274,6 @@ module.exports = {
   finalizarEnvio,
   registrarChecklistCondiciones,
   registrarChecklistIncidentes,
-  actualizarEstadoGlobalEnvio
+  actualizarEstadoGlobalEnvio,
+  generarDocumentoEnvio
 };
