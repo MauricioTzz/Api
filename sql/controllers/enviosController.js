@@ -1,5 +1,6 @@
 const { sql, poolPromise } = require('../../config/sqlserver');
 const Direccion = require('../../mongo/models/ubicacion');
+const FirmaEnvio = require('../../mongo/models/firmaEnvio');
 
 // 1.- Crear envíos completos (con múltiples particiones si el cliente lo decide)
 async function crearEnvioCompleto(req, res) {
@@ -852,7 +853,22 @@ async function finalizarEnvio(req, res) {
       return res.status(400).json({ error: 'Esta asignación no está en curso' });
     }
 
-    // 4️⃣ Actualizar asignación como finalizada
+    // 4️⃣ Validar que exista checklist de incidentes
+    const checklistRes = await pool.request()
+      .input('id_asignacion', sql.Int, id_asignacion)
+      .query(`SELECT id FROM ChecklistIncidentesTransporte WHERE id_asignacion = @id_asignacion`);
+
+    if (checklistRes.recordset.length === 0) {
+      return res.status(400).json({ error: 'Debes completar el checklist de incidentes antes de finalizar el viaje.' });
+    }
+
+    // 5️⃣ Validar que exista firma en MongoDB
+    const firma = await FirmaEnvio.findOne({ id_asignacion: id_asignacion });
+    if (!firma) {
+      return res.status(400).json({ error: 'Debes capturar la firma del cliente antes de finalizar el viaje.' });
+    }
+
+    // 6️⃣ Actualizar asignación como finalizada
     await pool.request()
       .input('id', sql.Int, id_asignacion)
       .input('estado', sql.NVarChar, 'Entregado')
@@ -863,7 +879,7 @@ async function finalizarEnvio(req, res) {
         WHERE id = @id
       `);
 
-    // 5️⃣ Liberar transportista y vehículo
+    // 7️⃣ Liberar transportista y vehículo
     await pool.request()
       .input('id', sql.Int, asignacion.id_transportista)
       .query(`UPDATE Transportistas SET estado = 'Disponible' WHERE id = @id`);
@@ -872,26 +888,25 @@ async function finalizarEnvio(req, res) {
       .input('id', sql.Int, asignacion.id_vehiculo)
       .query(`UPDATE Vehiculos SET estado = 'Disponible' WHERE id = @id`);
 
-    // 6️⃣ ACTUALIZAR ESTADO GLOBAL DEL ENVÍO
+    // 8️⃣ ACTUALIZAR ESTADO GLOBAL DEL ENVÍO
     const asignaciones = await pool.request()
       .input('id_envio', sql.Int, asignacion.id_envio)
       .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
 
     const estados = asignaciones.recordset.map(a => a.estado);
-  let nuevoEstado = 'Asignado';
+    let nuevoEstado = 'Asignado';
 
-  if (estados.length === 0) {
-    nuevoEstado = 'Pendiente';
-  } else if (estados.every(e => e === 'Entregado')) {
-    nuevoEstado = 'Entregado';
-  } else if (estados.every(e => e === 'Pendiente')) {
-    nuevoEstado = 'Asignado';
-  } else if (estados.some(e => e === 'Entregado') && estados.some(e => e !== 'Entregado')) {
-    nuevoEstado = 'Parcialmente entregado';
-  } else if (estados.some(e => e === 'En curso')) {
-    nuevoEstado = 'En curso';
-  }
-  
+    if (estados.length === 0) {
+      nuevoEstado = 'Pendiente';
+    } else if (estados.every(e => e === 'Entregado')) {
+      nuevoEstado = 'Entregado';
+    } else if (estados.every(e => e === 'Pendiente')) {
+      nuevoEstado = 'Asignado';
+    } else if (estados.some(e => e === 'Entregado') && estados.some(e => e !== 'Entregado')) {
+      nuevoEstado = 'Parcialmente entregado';
+    } else if (estados.some(e => e === 'En curso')) {
+      nuevoEstado = 'En curso';
+    }
 
     await pool.request()
       .input('id_envio', sql.Int, asignacion.id_envio)
@@ -989,7 +1004,7 @@ async function registrarChecklistCondiciones(req, res) {
 }
 
 
-// 10.- Registrar checklist de incidentes luego de finalizar viaje
+// 10.- Registrar checklist de incidentes luego de iniciar el viaje
 async function registrarChecklistIncidentes(req, res) {
   const id_asignacion = parseInt(req.params.id); // ahora usamos ID de AsignacionMultiple
   const checklist = req.body;
@@ -1002,7 +1017,7 @@ async function registrarChecklistIncidentes(req, res) {
   try {
     const pool = await poolPromise;
 
-    // Validar que la asignación exista y pertenezca al transportista autenticado
+    // 1️⃣ Validar que la asignación exista y pertenezca al transportista autenticado
     const validacion = await pool.request()
       .input('id', sql.Int, id_asignacion)
       .query(`
@@ -1022,11 +1037,12 @@ async function registrarChecklistIncidentes(req, res) {
       return res.status(403).json({ error: 'No tienes permiso para esta asignación' });
     }
 
-    if (asignacion.estado !== 'Entregado') {
-      return res.status(400).json({ error: 'Solo puedes registrar el checklist si ya finalizaste el viaje' });
+    // 🛠️ CAMBIO: Ahora permitimos registrar checklist cuando la asignación esté EN CURSO
+    if (asignacion.estado !== 'En curso') {
+      return res.status(400).json({ error: 'Solo puedes registrar el checklist si el viaje está en curso' });
     }
 
-    // Validar si ya existe un checklist de incidentes para esta asignación
+    // 2️⃣ Validar si ya existe un checklist de incidentes para esta asignación
     const yaExiste = await pool.request()
       .input('id_asignacion', sql.Int, id_asignacion)
       .query(`SELECT id FROM ChecklistIncidentesTransporte WHERE id_asignacion = @id_asignacion`);
@@ -1035,7 +1051,7 @@ async function registrarChecklistIncidentes(req, res) {
       return res.status(400).json({ error: 'El checklist ya fue registrado' });
     }
 
-    // Insertar el nuevo checklist de incidentes
+    // 3️⃣ Insertar el nuevo checklist de incidentes
     await pool.request()
       .input('id_asignacion', sql.Int, id_asignacion)
       .input('retraso', sql.Bit, checklist.retraso)
@@ -1071,6 +1087,7 @@ async function registrarChecklistIncidentes(req, res) {
     res.status(500).json({ error: 'Error interno al registrar el checklist' });
   }
 }
+
 
 
 
