@@ -1127,7 +1127,7 @@ async function actualizarEstadoGlobalEnvio(id_envio, pool) {
 // 11. Endpoint: Generar Documento de Envío completo
 async function generarDocumentoEnvio(req, res) {
   const id_envio = parseInt(req.params.id_envio);
-  const rol = req.usuario.rol; // Rol viene del token
+  const rol = req.usuario.rol; 
   const id_usuario = req.usuario.id;
 
   if (isNaN(id_envio)) {
@@ -1153,7 +1153,12 @@ async function generarDocumentoEnvio(req, res) {
 
     const envio = envioRes.recordset[0];
 
-    // Validar si cliente tiene permiso (si no es admin)
+    // 🔒 Validar si el envío está completamente ENTREGADO
+    if (envio.estado !== 'Entregado') {
+      return res.status(400).json({ error: 'El documento solo se puede generar cuando el envío esté completamente entregado.' });
+    }
+
+    // 🔒 Validar si el cliente tiene permiso (si no es admin)
     if (rol !== 'admin' && envio.id_usuario !== id_usuario) {
       return res.status(403).json({ error: 'No tienes acceso a este envío' });
     }
@@ -1185,9 +1190,8 @@ async function generarDocumentoEnvio(req, res) {
 
     const asignaciones = asignacionesRes.recordset;
 
-    // 4️⃣ Obtener cargas, checklist, firmas por cada asignación
+    // 4️⃣ Obtener cargas, checklist y firma por cada asignación
     const particiones = await Promise.all(asignaciones.map(async asignacion => {
-      // Obtener cargas
       const cargasRes = await pool.request()
         .input('id_asignacion', sql.Int, asignacion.id)
         .query(`
@@ -1197,10 +1201,8 @@ async function generarDocumentoEnvio(req, res) {
           WHERE ac.id_asignacion = @id_asignacion
         `);
 
-      // Obtener firma
       const firma = await FirmaEnvio.findOne({ id_asignacion: asignacion.id }).lean();
 
-      // Obtener checklist (solo si es admin)
       let checklistCondiciones = null;
       let checklistIncidentes = null;
 
@@ -1243,7 +1245,7 @@ async function generarDocumentoEnvio(req, res) {
       };
     }));
 
-    // 5️⃣ Preparar respuesta
+    // 5️⃣ Preparar respuesta final
     res.json({
       id_envio: envio.id,
       nombre_cliente: `${envio.nombre_cliente} ${envio.apellido_cliente}`,
