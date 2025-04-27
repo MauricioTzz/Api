@@ -1287,6 +1287,7 @@ async function generarDocumentoParticion(req, res) {
                e.id AS id_envio,
                e.estado AS estado_envio,
                e.fecha_creacion, e.fecha_inicio, e.fecha_entrega,
+               e.id_ubicacion_mongo,
                u.nombre AS nombre_cliente, u.apellido AS apellido_cliente,
                v.placa, v.tipo AS tipo_vehiculo,
                t.ci AS ci_transportista, t.telefono AS telefono_transportista,
@@ -1321,7 +1322,7 @@ async function generarDocumentoParticion(req, res) {
       console.warn('⚠️ Error obteniendo ubicación MongoDB:', errMongo.message);
     }
 
-    // 4️⃣ Obtener cargas
+    // 4️⃣ Obtener cargas asociadas a esta asignación
     const cargasRes = await pool.request()
       .input('id_asignacion', sql.Int, id_asignacion)
       .query(`
@@ -1334,7 +1335,7 @@ async function generarDocumentoParticion(req, res) {
     // 5️⃣ Obtener firma (MongoDB)
     const firma = await FirmaEnvio.findOne({ id_asignacion }).lean();
 
-    // 6️⃣ Obtener checklist (solo si es admin)
+    // 6️⃣ Obtener checklist (si es admin)
     let checklistCondiciones = null;
     let checklistIncidentes = null;
 
@@ -1350,7 +1351,7 @@ async function generarDocumentoParticion(req, res) {
       checklistIncidentes = incidentesRes.recordset[0] || null;
     }
 
-    // 7️⃣ Respuesta
+    // 7️⃣ Preparar respuesta final
     res.json({
       id_envio: asignacion.id_envio,
       nombre_cliente: `${asignacion.nombre_cliente} ${asignacion.apellido_cliente}`,
