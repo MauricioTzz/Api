@@ -14,6 +14,7 @@ router.put('/iniciar/:id', verificarToken, controller.iniciarViaje);
 router.put('/finalizar/:id', verificarToken, controller.finalizarEnvio);
 router.put('/:id/estado-global', verificarToken, soloAdmin, controller.actualizarEstadoGlobalEnvio);
 router.get('/documento/:id_envio', verificarToken, controller.generarDocumentoEnvio);
+router.get('/documento-particion/:id_asignacion', verificarToken, controller.generarDocumentoParticion);
 router.get('/', verificarToken, soloAdmin, controller.obtenerTodos);
 router.post('/:id/checklist-condiciones', verificarToken, controller.registrarChecklistCondiciones);
 router.post('/:id/checklist-incidentes', verificarToken, controller.registrarChecklistIncidentes);
