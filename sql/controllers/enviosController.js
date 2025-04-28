@@ -14,19 +14,20 @@ async function crearEnvioCompleto(req, res) {
 
     const pool = await poolPromise;
 
-    // 1️⃣ Crear envío principal
+    // 1️⃣ Insertar envío principal
     const envioResult = await pool.request()
       .input('id_usuario', sql.Int, id_usuario_cliente)
       .input('id_ubicacion_mongo', sql.NVarChar, id_ubicacion_mongo)
-      .input('estado', sql.NVarChar, 'Pendiente') // Cliente siempre crea como pendiente
+      .input('estado', sql.NVarChar, 'Pendiente') // Siempre pendiente
       .query(`
         INSERT INTO Envios (id_usuario, id_ubicacion_mongo, estado)
-        OUTPUT INSERTED.id VALUES (@id_usuario, @id_ubicacion_mongo, @estado)
+        OUTPUT INSERTED.id
+        VALUES (@id_usuario, @id_ubicacion_mongo, @estado)
       `);
 
     const id_envio = envioResult.recordset[0].id;
 
-    // 2️⃣ Procesar cada partición
+    // 2️⃣ Procesar particiones
     for (const particion of particiones) {
       const { cargas, recogidaEntrega, id_tipo_transporte } = particion;
 
@@ -44,12 +45,13 @@ async function crearEnvioCompleto(req, res) {
         .input('instrucciones_entrega', sql.NVarChar, r.instrucciones_entrega || null)
         .query(`
           INSERT INTO RecogidaEntrega (fecha_recogida, hora_recogida, hora_entrega, instrucciones_recogida, instrucciones_entrega)
-          OUTPUT INSERTED.id VALUES (@fecha_recogida, @hora_recogida, @hora_entrega, @instrucciones_recogida, @instrucciones_entrega)
+          OUTPUT INSERTED.id
+          VALUES (@fecha_recogida, @hora_recogida, @hora_entrega, @instrucciones_recogida, @instrucciones_entrega)
         `);
 
       const id_recogida_entrega = recogidaResult.recordset[0].id;
 
-      // 4️⃣ Insertar Asignación SIN transportista ni vehículo
+      // 4️⃣ Insertar AsignacionMultiple SIN transportista ni vehículo
       const asignacionRes = await pool.request()
         .input('id_envio', sql.Int, id_envio)
         .input('id_tipo_transporte', sql.Int, id_tipo_transporte)
@@ -57,12 +59,13 @@ async function crearEnvioCompleto(req, res) {
         .input('id_recogida_entrega', sql.Int, id_recogida_entrega)
         .query(`
           INSERT INTO AsignacionMultiple (id_envio, id_tipo_transporte, estado, id_recogida_entrega)
-          OUTPUT INSERTED.id VALUES (@id_envio, @id_tipo_transporte, @estado, @id_recogida_entrega)
+          OUTPUT INSERTED.id
+          VALUES (@id_envio, @id_tipo_transporte, @estado, @id_recogida_entrega)
         `);
 
       const id_asignacion = asignacionRes.recordset[0].id;
 
-      // 5️⃣ Insertar todas las cargas relacionadas a esta partición
+      // 5️⃣ Insertar todas las cargas de esta partición
       for (const carga of cargas) {
         const cargaRes = await pool.request()
           .input('tipo', sql.NVarChar, carga.tipo)
@@ -72,7 +75,8 @@ async function crearEnvioCompleto(req, res) {
           .input('peso', sql.Decimal(10, 2), carga.peso)
           .query(`
             INSERT INTO Carga (tipo, variedad, cantidad, empaquetado, peso)
-            OUTPUT INSERTED.id VALUES (@tipo, @variedad, @cantidad, @empaquetado, @peso)
+            OUTPUT INSERTED.id
+            VALUES (@tipo, @variedad, @cantidad, @empaquetado, @peso)
           `);
 
         const id_carga = cargaRes.recordset[0].id;
