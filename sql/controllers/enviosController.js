@@ -2,28 +2,24 @@ const { sql, poolPromise } = require('../../config/sqlserver');
 const Direccion = require('../../mongo/models/ubicacion');
 const FirmaEnvio = require('../../mongo/models/firmaEnvio');
 
-// 1.- Crear envíos completos (con múltiples particiones si el cliente lo decide)
+// 1.- Crear envío completo con múltiples particiones y cargas (CLIENTE o ADMIN)
 async function crearEnvioCompleto(req, res) {
-  const {
-    id_ubicacion_mongo,
-    particiones
-  } = req.body;
-
+  const { id_ubicacion_mongo, particiones } = req.body;
   const rol = req.usuario.rol;
   const id_usuario = req.usuario.id;
 
-  if (!id_ubicacion_mongo || !particiones || !Array.isArray(particiones) || particiones.length === 0) {
-    return res.status(400).json({ error: 'Faltan datos requeridos del envío completo o particiones vacías' });
+  if (!id_ubicacion_mongo || !Array.isArray(particiones) || particiones.length === 0) {
+    return res.status(400).json({ error: 'Faltan datos requeridos: id_ubicacion_mongo o particiones' });
   }
 
   try {
     const pool = await poolPromise;
 
-    // ✅ Crear una entrada base del envío
+    // 1️⃣ Crear el envío principal
     const envioResult = await pool.request()
       .input('id_usuario', sql.Int, id_usuario)
       .input('id_ubicacion_mongo', sql.NVarChar, id_ubicacion_mongo)
-      .input('estado', sql.NVarChar, 'Pendiente')
+      .input('estado', sql.NVarChar, rol === 'admin' ? 'Asignado' : 'Pendiente') // Admin lo asigna, cliente queda pendiente
       .query(`
         INSERT INTO Envios (id_usuario, id_ubicacion_mongo, estado)
         OUTPUT INSERTED.id VALUES (@id_usuario, @id_ubicacion_mongo, @estado)
@@ -31,32 +27,19 @@ async function crearEnvioCompleto(req, res) {
 
     const id_envio = envioResult.recordset[0].id;
 
+    // 2️⃣ Procesar particiones
     for (const particion of particiones) {
-      const { carga, recogidaEntrega, id_tipo_transporte, id_transportista, id_vehiculo } = particion;
+      const { cargas, recogidaEntrega, id_tipo_transporte, id_transportista, id_vehiculo } = particion;
 
-      if (!carga || !recogidaEntrega || !id_tipo_transporte) {
-        return res.status(400).json({ error: 'Cada partición debe tener carga, recogida/entrega y tipo de transporte' });
+      if (!cargas || !Array.isArray(cargas) || cargas.length === 0 || !recogidaEntrega || !id_tipo_transporte) {
+        return res.status(400).json({ error: 'Cada partición debe incluir cargas, recogida/entrega y tipo de transporte' });
       }
 
       if (rol === 'cliente' && (id_transportista || id_vehiculo)) {
-        return res.status(403).json({ error: 'Los clientes no pueden asignar transportista ni vehículo' });
+        return res.status(403).json({ error: 'El cliente no puede asignar transportista ni vehículo' });
       }
 
-      // ✅ Insertar carga
-      const cargaResult = await pool.request()
-        .input('tipo', sql.NVarChar, carga.tipo)
-        .input('variedad', sql.NVarChar, carga.variedad)
-        .input('cantidad', sql.Int, carga.cantidad)
-        .input('empaquetado', sql.NVarChar, carga.empaquetado)
-        .input('peso', sql.Decimal(10, 2), carga.peso)
-        .query(`
-          INSERT INTO Carga (tipo, variedad, cantidad, empaquetado, peso)
-          OUTPUT INSERTED.id VALUES (@tipo, @variedad, @cantidad, @empaquetado, @peso)
-        `);
-
-      const id_carga = cargaResult.recordset[0].id;
-
-      // ✅ Insertar recogidaEntrega
+      // 3️⃣ Insertar recogida/entrega
       const r = recogidaEntrega;
       const recogidaResult = await pool.request()
         .input('fecha_recogida', sql.Date, r.fecha_recogida)
@@ -71,8 +54,15 @@ async function crearEnvioCompleto(req, res) {
 
       const id_recogida_entrega = recogidaResult.recordset[0].id;
 
-      // ✅ Insertar asignación (solo si es admin)
+      // 4️⃣ Insertar asignación
+      let asignacionRequest = pool.request()
+        .input('id_envio', sql.Int, id_envio)
+        .input('id_tipo_transporte', sql.Int, id_tipo_transporte)
+        .input('estado', sql.NVarChar, 'Pendiente')
+        .input('id_recogida_entrega', sql.Int, id_recogida_entrega);
+
       if (rol === 'admin' && id_transportista && id_vehiculo) {
+        // Si es admin puede asignar transportista y vehículo
         const disponibilidad = await pool.request()
           .input('id_transportista', sql.Int, id_transportista)
           .input('id_vehiculo', sql.Int, id_vehiculo)
@@ -85,47 +75,62 @@ async function crearEnvioCompleto(req, res) {
         const { estado_transportista, estado_vehiculo } = disponibilidad.recordset[0];
 
         if (estado_transportista !== 'Disponible' || estado_vehiculo !== 'Disponible') {
-          return res.status(400).json({ error: 'Transportista o vehículo no disponibles para una partición' });
+          return res.status(400).json({ error: 'Transportista o vehículo no disponibles para la asignación' });
         }
 
-        const asignacionResult = await pool.request()
-          .input('id_envio', sql.Int, id_envio)
+        asignacionRequest
           .input('id_transportista', sql.Int, id_transportista)
-          .input('id_vehiculo', sql.Int, id_vehiculo)
-          .input('estado', sql.NVarChar, 'Pendiente')
-          .input('id_tipo_transporte', sql.Int, id_tipo_transporte)
-          .input('id_recogida_entrega', sql.Int, id_recogida_entrega)
-          .query(`
-            INSERT INTO AsignacionMultiple (id_envio, id_transportista, id_vehiculo, estado, id_tipo_transporte, id_recogida_entrega)
-            OUTPUT INSERTED.id VALUES (@id_envio, @id_transportista, @id_vehiculo, @estado, @id_tipo_transporte, @id_recogida_entrega)
-          `);
+          .input('id_vehiculo', sql.Int, id_vehiculo);
+      }
 
-        const id_asignacion = asignacionResult.recordset[0].id;
+      const asignacionQuery = `
+        INSERT INTO AsignacionMultiple (id_envio, ${rol === 'admin' ? 'id_transportista, id_vehiculo,' : ''} estado, id_tipo_transporte, id_recogida_entrega)
+        OUTPUT INSERTED.id VALUES (@id_envio, ${rol === 'admin' ? '@id_transportista, @id_vehiculo,' : ''} @estado, @id_tipo_transporte, @id_recogida_entrega)
+      `;
 
+      const asignacionRes = await asignacionRequest.query(asignacionQuery);
+      const id_asignacion = asignacionRes.recordset[0].id;
+
+      if (rol === 'admin' && id_transportista && id_vehiculo) {
         await pool.request().input('id', sql.Int, id_transportista)
           .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id`);
-
         await pool.request().input('id', sql.Int, id_vehiculo)
           .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
+      }
 
+      // 5️⃣ Insertar cargas
+      for (const carga of cargas) {
+        const cargaResult = await pool.request()
+          .input('tipo', sql.NVarChar, carga.tipo)
+          .input('variedad', sql.NVarChar, carga.variedad)
+          .input('cantidad', sql.Int, carga.cantidad)
+          .input('empaquetado', sql.NVarChar, carga.empaquetado)
+          .input('peso', sql.Decimal(10, 2), carga.peso)
+          .query(`
+            INSERT INTO Carga (tipo, variedad, cantidad, empaquetado, peso)
+            OUTPUT INSERTED.id VALUES (@tipo, @variedad, @cantidad, @empaquetado, @peso)
+          `);
+
+        const id_carga = cargaResult.recordset[0].id;
+
+        // 🔗 Asociar carga a asignación
         await pool.request()
           .input('id_asignacion', sql.Int, id_asignacion)
           .input('id_carga', sql.Int, id_carga)
           .query(`
-            INSERT INTO AsignacionCarga (id_asignacion, id_carga)
-            VALUES (@id_asignacion, @id_carga)
+            INSERT INTO AsignacionCarga (id_asignacion, id_carga) VALUES (@id_asignacion, @id_carga)
           `);
       }
     }
 
-    res.status(201).json({
-      mensaje: '✅ Envío completo creado correctamente con particiones',
+    return res.status(201).json({
+      mensaje: '✅ Envío creado correctamente con múltiples particiones y cargas',
       id_envio
     });
 
   } catch (err) {
     console.error('❌ Error al crear envío completo:', err);
-    res.status(500).json({ error: 'Error al crear envío completo' });
+    return res.status(500).json({ error: 'Error interno al crear envío' });
   }
 }
 
