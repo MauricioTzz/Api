@@ -461,10 +461,11 @@ async function asignarTransportistaYVehiculo(req, res) {
 }
 
 
+
 // 4.1.- Asignar transportista y vehículo a una partición ya existente (para envíos creados por cliente)
 async function asignarTransportistaYVehiculoAParticion(req, res) {
-  const id_asignacion = parseInt(req.params.id_asignacion); // ahora capturamos el ID de la partición
-  const { id_transportista, id_vehiculo } = req.body; // ya no recibimos carga ni recogidaEntrega
+  const id_asignacion = parseInt(req.params.id_asignacion); // capturamos el ID de la partición
+  const { id_transportista, id_vehiculo } = req.body; // recibimos transportista y vehículo
 
   if (!id_transportista || !id_vehiculo) {
     return res.status(400).json({ error: 'Faltan datos para la asignación (transportista y vehículo)' });
@@ -489,14 +490,16 @@ async function asignarTransportistaYVehiculoAParticion(req, res) {
       return res.status(400).json({ error: '❌ Transportista o vehículo no disponibles' });
     }
 
-    // Verificar existencia de la partición (asignación)
+    // Verificar existencia de la partición y obtener id_envio
     const particionExiste = await pool.request()
       .input('id_asignacion', sql.Int, id_asignacion)
-      .query('SELECT id FROM AsignacionMultiple WHERE id = @id_asignacion');
+      .query('SELECT id, id_envio FROM AsignacionMultiple WHERE id = @id_asignacion');
 
     if (particionExiste.recordset.length === 0) {
       return res.status(404).json({ error: 'Partición (Asignación) no encontrada' });
     }
+
+    const { id_envio } = particionExiste.recordset[0];
 
     // Actualizar la partición existente con transportista y vehículo
     await pool.request()
@@ -512,11 +515,16 @@ async function asignarTransportistaYVehiculoAParticion(req, res) {
       `);
 
     // Marcar transportista y vehículo como No Disponible
-    await pool.request().input('id', sql.Int, id_transportista)
+    await pool.request()
+      .input('id', sql.Int, id_transportista)
       .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id`);
 
-    await pool.request().input('id', sql.Int, id_vehiculo)
+    await pool.request()
+      .input('id', sql.Int, id_vehiculo)
       .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
+
+    // ✅ Actualizar el estado global del envío
+    await actualizarEstadoGlobalEnvio(id_envio, pool);
 
     res.json({ mensaje: '✅ Transportista y vehículo asignados correctamente a la partición' });
 
@@ -525,6 +533,8 @@ async function asignarTransportistaYVehiculoAParticion(req, res) {
     res.status(500).json({ error: 'Error interno al asignar a partición' });
   }
 }
+
+
 
 // 5.- Obtener solo mis envíos ya sea de Cliente o Admin
 async function obtenerMisEnvios(req, res) {
