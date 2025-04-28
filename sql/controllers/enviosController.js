@@ -30,7 +30,7 @@ async function crearEnvioCompleto(req, res) {
     for (const particion of particiones) {
       const { cargas, recogidaEntrega, id_tipo_transporte } = particion;
 
-      if (!cargas || !recogidaEntrega || !id_tipo_transporte) {
+      if (!cargas || !Array.isArray(cargas) || cargas.length === 0 || !recogidaEntrega || !id_tipo_transporte) {
         return res.status(400).json({ error: 'Cada partición debe incluir cargas, recogidaEntrega y tipo de transporte' });
       }
 
@@ -62,7 +62,7 @@ async function crearEnvioCompleto(req, res) {
 
       const id_asignacion = asignacionRes.recordset[0].id;
 
-      // 5️⃣ Insertar Cargas de esta partición
+      // 5️⃣ Insertar todas las cargas relacionadas a esta partición
       for (const carga of cargas) {
         const cargaRes = await pool.request()
           .input('tipo', sql.NVarChar, carga.tipo)
@@ -77,7 +77,7 @@ async function crearEnvioCompleto(req, res) {
 
         const id_carga = cargaRes.recordset[0].id;
 
-        // 🔗 Relacionar carga a asignación
+        // 🔗 Relacionar carga con asignación
         await pool.request()
           .input('id_asignacion', sql.Int, id_asignacion)
           .input('id_carga', sql.Int, id_carga)
@@ -98,7 +98,6 @@ async function crearEnvioCompleto(req, res) {
     return res.status(500).json({ error: 'Error interno al crear envío (cliente)' });
   }
 }
-
 
 
 // 2.- Obtener todos los envíos
