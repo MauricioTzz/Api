@@ -10,6 +10,7 @@ router.get('/mis-envios', verificarToken, controller.obtenerMisEnvios);
 router.get('/mis-envios-transportista', verificarToken, controller.obtenerEnviosAsignadosTransportista);
 router.post('/', verificarToken, controller.crearEnvioCompleto);
 router.put('/asignar/:id', verificarToken, soloAdmin, controller.asignarTransportistaYVehiculo);
+router.put('/asignar-particion/:id_asignacion', verificarToken, soloAdmin, controller.asignarTransportistaYVehiculoAParticion);
 router.put('/iniciar/:id', verificarToken, controller.iniciarViaje);
 router.put('/finalizar/:id', verificarToken, controller.finalizarEnvio);
 router.put('/:id/estado-global', verificarToken, soloAdmin, controller.actualizarEstadoGlobalEnvio);

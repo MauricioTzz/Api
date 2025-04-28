@@ -353,8 +353,6 @@ async function obtenerPorId(req, res) {
 
 
 
-
-
 // 4.- Asignar transportista y vehículo (adaptado con partición)
 async function asignarTransportistaYVehiculo(req, res) {
   const id_envio = parseInt(req.params.id);
@@ -459,6 +457,72 @@ async function asignarTransportistaYVehiculo(req, res) {
   } catch (err) {
     console.error('❌ Error al asignar:', err);
     res.status(500).json({ error: 'Error al asignar transporte' });
+  }
+}
+
+
+// 4.1.- Asignar transportista y vehículo a una partición ya existente (para envíos creados por cliente)
+async function asignarTransportistaYVehiculoAParticion(req, res) {
+  const id_asignacion = parseInt(req.params.id_asignacion); // ahora capturamos el ID de la partición
+  const { id_transportista, id_vehiculo } = req.body; // ya no recibimos carga ni recogidaEntrega
+
+  if (!id_transportista || !id_vehiculo) {
+    return res.status(400).json({ error: 'Faltan datos para la asignación (transportista y vehículo)' });
+  }
+
+  try {
+    const pool = await poolPromise;
+
+    // Verificar disponibilidad del transportista y vehículo
+    const disponibilidad = await pool.request()
+      .input('id_transportista', sql.Int, id_transportista)
+      .input('id_vehiculo', sql.Int, id_vehiculo)
+      .query(`
+        SELECT 
+          (SELECT estado FROM Transportistas WHERE id = @id_transportista) AS estado_transportista,
+          (SELECT estado FROM Vehiculos WHERE id = @id_vehiculo) AS estado_vehiculo
+      `);
+
+    const { estado_transportista, estado_vehiculo } = disponibilidad.recordset[0];
+
+    if (estado_transportista !== 'Disponible' || estado_vehiculo !== 'Disponible') {
+      return res.status(400).json({ error: '❌ Transportista o vehículo no disponibles' });
+    }
+
+    // Verificar existencia de la partición (asignación)
+    const particionExiste = await pool.request()
+      .input('id_asignacion', sql.Int, id_asignacion)
+      .query('SELECT id FROM AsignacionMultiple WHERE id = @id_asignacion');
+
+    if (particionExiste.recordset.length === 0) {
+      return res.status(404).json({ error: 'Partición (Asignación) no encontrada' });
+    }
+
+    // Actualizar la partición existente con transportista y vehículo
+    await pool.request()
+      .input('id_asignacion', sql.Int, id_asignacion)
+      .input('id_transportista', sql.Int, id_transportista)
+      .input('id_vehiculo', sql.Int, id_vehiculo)
+      .query(`
+        UPDATE AsignacionMultiple
+        SET id_transportista = @id_transportista,
+            id_vehiculo = @id_vehiculo,
+            estado = 'Pendiente'
+        WHERE id = @id_asignacion
+      `);
+
+    // Marcar transportista y vehículo como No Disponible
+    await pool.request().input('id', sql.Int, id_transportista)
+      .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id`);
+
+    await pool.request().input('id', sql.Int, id_vehiculo)
+      .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
+
+    res.json({ mensaje: '✅ Transportista y vehículo asignados correctamente a la partición' });
+
+  } catch (err) {
+    console.error('❌ Error al asignar a partición:', err);
+    res.status(500).json({ error: 'Error interno al asignar a partición' });
   }
 }
 
@@ -1374,6 +1438,7 @@ module.exports = {
   obtenerTodos,
   obtenerPorId,
   asignarTransportistaYVehiculo,
+  asignarTransportistaYVehiculoAParticion,
   obtenerMisEnvios,
   iniciarViaje,
   obtenerEnviosAsignadosTransportista,
