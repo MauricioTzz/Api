@@ -1226,20 +1226,23 @@ async function generarDocumentoEnvio(req, res) {
                u.nombre AS nombre_transportista, u.apellido AS apellido_transportista,
                t.ci AS ci_transportista, t.telefono AS telefono_transportista,
                v.placa, v.tipo AS tipo_vehiculo,
-               tp.nombre AS nombre_tipo_transporte, tp.descripcion AS descripcion_tipo_transporte
+               tp.nombre AS nombre_tipo_transporte, tp.descripcion AS descripcion_tipo_transporte,
+               re.fecha_recogida, re.hora_recogida, re.hora_entrega,
+               re.instrucciones_recogida, re.instrucciones_entrega
         FROM AsignacionMultiple am
         LEFT JOIN Transportistas t ON am.id_transportista = t.id
         LEFT JOIN Usuarios u ON t.id_usuario = u.id
         LEFT JOIN Vehiculos v ON am.id_vehiculo = v.id
         LEFT JOIN TipoTransporte tp ON am.id_tipo_transporte = tp.id
+        LEFT JOIN RecogidaEntrega re ON am.id_recogida_entrega = re.id
         WHERE am.id_envio = @id_envio
       `);
 
     const asignaciones = asignacionesRes.recordset;
 
-    // 4️⃣ Obtener cargas, firma, checklist y recogidaEntrega por cada asignación
+    // 4️⃣ Obtener cargas, checklist y firma por cada asignación
     const particiones = await Promise.all(asignaciones.map(async asignacion => {
-      // 🔄 Obtener las cargas asociadas
+      // Cargas
       const cargasRes = await pool.request()
         .input('id_asignacion', sql.Int, asignacion.id)
         .query(`
@@ -1249,21 +1252,10 @@ async function generarDocumentoEnvio(req, res) {
           WHERE ac.id_asignacion = @id_asignacion
         `);
 
-      // 🔄 Obtener datos de recogida y entrega
-      const recogidaEntregaRes = await pool.request()
-        .input('id_asignacion', sql.Int, asignacion.id)
-        .query(`
-          SELECT fecha_recogida, hora_recogida, hora_entrega, instrucciones_recogida, instrucciones_entrega
-          FROM RecogidaEntrega
-          WHERE id_asignacion = @id_asignacion
-        `);
-      
-      const recogidaEntrega = recogidaEntregaRes.recordset[0] || {};
-
-      // 🔄 Obtener firma (MongoDB)
+      // Firma
       const firma = await FirmaEnvio.findOne({ id_asignacion: asignacion.id }).lean();
 
-      // 🔄 Obtener checklist (si es admin)
+      // Checklist (solo admin)
       let checklistCondiciones = null;
       let checklistIncidentes = null;
 
@@ -1278,6 +1270,15 @@ async function generarDocumentoEnvio(req, res) {
           .query(`SELECT * FROM ChecklistIncidentesTransporte WHERE id_asignacion = @id_asignacion`);
         checklistIncidentes = incidentesRes.recordset[0] || null;
       }
+
+      // Incluir todos los datos de recogida y entrega tal como están
+      const recogidaEntrega = {
+        fecha_recogida: asignacion.fecha_recogida || null,
+        hora_recogida: asignacion.hora_recogida || null,
+        hora_entrega: asignacion.hora_entrega || null,
+        instrucciones_recogida: asignacion.instrucciones_recogida || null,
+        instrucciones_entrega: asignacion.instrucciones_entrega || null
+      };
 
       return {
         id_asignacion: asignacion.id,
@@ -1299,13 +1300,7 @@ async function generarDocumentoEnvio(req, res) {
           nombre: asignacion.nombre_tipo_transporte,
           descripcion: asignacion.descripcion_tipo_transporte
         },
-        recogidaEntrega: {
-          fecha_recogida: recogidaEntrega.fecha_recogida || null,
-          hora_recogida: recogidaEntrega.hora_recogida || null,
-          hora_entrega: recogidaEntrega.hora_entrega || null,
-          instrucciones_recogida: recogidaEntrega.instrucciones_recogida || "Sin instrucciones",
-          instrucciones_entrega: recogidaEntrega.instrucciones_entrega || "Sin instrucciones"
-        },
+        recogidaEntrega,
         cargas: cargasRes.recordset,
         firma: firma ? firma.imagenFirma : null,
         checklistCondiciones,
@@ -1331,6 +1326,7 @@ async function generarDocumentoEnvio(req, res) {
     res.status(500).json({ error: 'Error interno al generar documento' });
   }
 }
+
 
 
 // 12. Endpoint: Generar Documento de Partición (asignación específica)
@@ -1360,7 +1356,9 @@ async function generarDocumentoParticion(req, res) {
                v.placa, v.tipo AS tipo_vehiculo,
                t.ci AS ci_transportista, t.telefono AS telefono_transportista,
                ut.nombre AS nombre_transportista, ut.apellido AS apellido_transportista,
-               tp.nombre AS nombre_tipo_transporte, tp.descripcion AS descripcion_tipo_transporte
+               tp.nombre AS nombre_tipo_transporte, tp.descripcion AS descripcion_tipo_transporte,
+               re.fecha_recogida, re.hora_recogida, re.hora_entrega,
+               re.instrucciones_recogida, re.instrucciones_entrega
         FROM AsignacionMultiple am
         INNER JOIN Envios e ON am.id_envio = e.id
         INNER JOIN Usuarios u ON e.id_usuario = u.id
@@ -1368,6 +1366,7 @@ async function generarDocumentoParticion(req, res) {
         LEFT JOIN Transportistas t ON am.id_transportista = t.id
         LEFT JOIN Usuarios ut ON t.id_usuario = ut.id
         LEFT JOIN TipoTransporte tp ON am.id_tipo_transporte = tp.id
+        LEFT JOIN RecogidaEntrega re ON am.id_recogida_entrega = re.id
         WHERE am.id = @id_asignacion
       `);
 
@@ -1400,21 +1399,10 @@ async function generarDocumentoParticion(req, res) {
         WHERE ac.id_asignacion = @id_asignacion
       `);
 
-    // 5️⃣ Obtener datos de recogida y entrega
-    const recogidaEntregaRes = await pool.request()
-      .input('id_asignacion', sql.Int, id_asignacion)
-      .query(`
-        SELECT fecha_recogida, hora_recogida, hora_entrega, instrucciones_recogida, instrucciones_entrega
-        FROM RecogidaEntrega
-        WHERE id_asignacion = @id_asignacion
-      `);
-
-    const recogidaEntrega = recogidaEntregaRes.recordset[0] || {};
-
-    // 6️⃣ Obtener firma (MongoDB)
+    // 5️⃣ Obtener firma (MongoDB)
     const firma = await FirmaEnvio.findOne({ id_asignacion }).lean();
 
-    // 7️⃣ Obtener checklist (si es admin)
+    // 6️⃣ Obtener checklist (si es admin)
     let checklistCondiciones = null;
     let checklistIncidentes = null;
 
@@ -1430,7 +1418,7 @@ async function generarDocumentoParticion(req, res) {
       checklistIncidentes = incidentesRes.recordset[0] || null;
     }
 
-    // 8️⃣ Preparar respuesta final
+    // 7️⃣ Preparar respuesta final
     res.json({
       id_envio: asignacion.id_envio,
       nombre_cliente: `${asignacion.nombre_cliente} ${asignacion.apellido_cliente}`,
@@ -1461,11 +1449,11 @@ async function generarDocumentoParticion(req, res) {
           descripcion: asignacion.descripcion_tipo_transporte
         },
         recogidaEntrega: {
-          fecha_recogida: recogidaEntrega.fecha_recogida || null,
-          hora_recogida: recogidaEntrega.hora_recogida || null,
-          hora_entrega: recogidaEntrega.hora_entrega || null,
-          instrucciones_recogida: recogidaEntrega.instrucciones_recogida || "Sin instrucciones",
-          instrucciones_entrega: recogidaEntrega.instrucciones_entrega || "Sin instrucciones"
+          fecha_recogida: asignacion.fecha_recogida || null,
+          hora_recogida: asignacion.hora_recogida || null,
+          hora_entrega: asignacion.hora_entrega || null,
+          instrucciones_recogida: asignacion.instrucciones_recogida || null,
+          instrucciones_entrega: asignacion.instrucciones_entrega || null
         },
         cargas: cargasRes.recordset,
         firma: firma ? firma.imagenFirma : null,
