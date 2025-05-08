@@ -1237,8 +1237,9 @@ async function generarDocumentoEnvio(req, res) {
 
     const asignaciones = asignacionesRes.recordset;
 
-    // 4️⃣ Obtener cargas, checklist y firma por cada asignación
+    // 4️⃣ Obtener cargas, firma, checklist y recogidaEntrega por cada asignación
     const particiones = await Promise.all(asignaciones.map(async asignacion => {
+      // 🔄 Obtener las cargas asociadas
       const cargasRes = await pool.request()
         .input('id_asignacion', sql.Int, asignacion.id)
         .query(`
@@ -1248,8 +1249,21 @@ async function generarDocumentoEnvio(req, res) {
           WHERE ac.id_asignacion = @id_asignacion
         `);
 
+      // 🔄 Obtener datos de recogida y entrega
+      const recogidaEntregaRes = await pool.request()
+        .input('id_asignacion', sql.Int, asignacion.id)
+        .query(`
+          SELECT fecha_recogida, hora_recogida, hora_entrega, instrucciones_recogida, instrucciones_entrega
+          FROM RecogidaEntrega
+          WHERE id_asignacion = @id_asignacion
+        `);
+      
+      const recogidaEntrega = recogidaEntregaRes.recordset[0] || {};
+
+      // 🔄 Obtener firma (MongoDB)
       const firma = await FirmaEnvio.findOne({ id_asignacion: asignacion.id }).lean();
 
+      // 🔄 Obtener checklist (si es admin)
       let checklistCondiciones = null;
       let checklistIncidentes = null;
 
@@ -1284,6 +1298,13 @@ async function generarDocumentoEnvio(req, res) {
         tipo_transporte: {
           nombre: asignacion.nombre_tipo_transporte,
           descripcion: asignacion.descripcion_tipo_transporte
+        },
+        recogidaEntrega: {
+          fecha_recogida: recogidaEntrega.fecha_recogida || null,
+          hora_recogida: recogidaEntrega.hora_recogida || null,
+          hora_entrega: recogidaEntrega.hora_entrega || null,
+          instrucciones_recogida: recogidaEntrega.instrucciones_recogida || "Sin instrucciones",
+          instrucciones_entrega: recogidaEntrega.instrucciones_entrega || "Sin instrucciones"
         },
         cargas: cargasRes.recordset,
         firma: firma ? firma.imagenFirma : null,
@@ -1379,10 +1400,21 @@ async function generarDocumentoParticion(req, res) {
         WHERE ac.id_asignacion = @id_asignacion
       `);
 
-    // 5️⃣ Obtener firma (MongoDB)
+    // 5️⃣ Obtener datos de recogida y entrega
+    const recogidaEntregaRes = await pool.request()
+      .input('id_asignacion', sql.Int, id_asignacion)
+      .query(`
+        SELECT fecha_recogida, hora_recogida, hora_entrega, instrucciones_recogida, instrucciones_entrega
+        FROM RecogidaEntrega
+        WHERE id_asignacion = @id_asignacion
+      `);
+
+    const recogidaEntrega = recogidaEntregaRes.recordset[0] || {};
+
+    // 6️⃣ Obtener firma (MongoDB)
     const firma = await FirmaEnvio.findOne({ id_asignacion }).lean();
 
-    // 6️⃣ Obtener checklist (si es admin)
+    // 7️⃣ Obtener checklist (si es admin)
     let checklistCondiciones = null;
     let checklistIncidentes = null;
 
@@ -1398,7 +1430,7 @@ async function generarDocumentoParticion(req, res) {
       checklistIncidentes = incidentesRes.recordset[0] || null;
     }
 
-    // 7️⃣ Preparar respuesta final
+    // 8️⃣ Preparar respuesta final
     res.json({
       id_envio: asignacion.id_envio,
       nombre_cliente: `${asignacion.nombre_cliente} ${asignacion.apellido_cliente}`,
@@ -1427,6 +1459,13 @@ async function generarDocumentoParticion(req, res) {
         tipo_transporte: {
           nombre: asignacion.nombre_tipo_transporte,
           descripcion: asignacion.descripcion_tipo_transporte
+        },
+        recogidaEntrega: {
+          fecha_recogida: recogidaEntrega.fecha_recogida || null,
+          hora_recogida: recogidaEntrega.hora_recogida || null,
+          hora_entrega: recogidaEntrega.hora_entrega || null,
+          instrucciones_recogida: recogidaEntrega.instrucciones_recogida || "Sin instrucciones",
+          instrucciones_entrega: recogidaEntrega.instrucciones_entrega || "Sin instrucciones"
         },
         cargas: cargasRes.recordset,
         firma: firma ? firma.imagenFirma : null,
