@@ -37,12 +37,12 @@ async function crearEnvioCompletoAdmin(req, res) {
         return res.status(400).json({ error: 'Faltan datos en una de las particiones del envío' });
       }
 
-      // 4️⃣ Insertar RecogidaEntrega (sin fechas ficticias)
+      // 4️⃣ Insertar RecogidaEntrega
       const r = recogidaEntrega;
       const recogidaResult = await pool.request()
-        .input('fecha_recogida', sql.Date, r.fecha_recogida || null)
-        .input('hora_recogida', sql.NVarChar, r.hora_recogida || null) 
-        .input('hora_entrega', sql.NVarChar, r.hora_entrega || null)   
+        .input('fecha_recogida', sql.Date, r.fecha_recogida)
+        .input('hora_recogida', sql.Time, new Date(`1970-01-01T${r.hora_recogida}`))
+        .input('hora_entrega', sql.Time, new Date(`1970-01-01T${r.hora_entrega}`))
         .input('instrucciones_recogida', sql.NVarChar, r.instrucciones_recogida || null)
         .input('instrucciones_entrega', sql.NVarChar, r.instrucciones_entrega || null)
         .query(`
@@ -153,7 +153,7 @@ async function buscarCliente(req, res) {
   }
 
 
-// 3.- Obtener historial completo de envíos de un cliente (una entrada por envío)
+   // 3.- Obtener historial completo de envíos de un cliente (una entrada por envío)
 async function obtenerHistorialCliente(req, res) {
   const id_usuario = parseInt(req.params.id_usuario);
 
@@ -185,50 +185,26 @@ async function obtenerHistorialCliente(req, res) {
     const historial = [];
 
     for (const envio of envios) {
-      // Obtener ubicación MongoDB
-      let origen = null, destino = null;
+      // Obtener ubicación Mongo
+      let origen = "—", destino = "—";
       try {
         const ubicacion = await Direccion.findById(envio.id_ubicacion_mongo);
         if (ubicacion) {
-          origen = ubicacion.nombreOrigen || null;
-          destino = ubicacion.nombreDestino || null;
+          origen = ubicacion.nombreOrigen;
+          destino = ubicacion.nombreDestino;
         }
-      } catch (err) {
-        console.warn("⚠️ Error al obtener ubicación MongoDB:", err.message);
-      }
-
-      // Obtener detalles de las particiones
-      const particionesRes = await pool.request()
-        .input('id_envio', sql.Int, envio.id)
-        .query(`
-          SELECT 
-            re.fecha_recogida, 
-            FORMAT(re.hora_recogida, 'HH:mm') AS hora_recogida, 
-            FORMAT(re.hora_entrega, 'HH:mm') AS hora_entrega
-          FROM AsignacionMultiple am
-          LEFT JOIN RecogidaEntrega re ON am.id_recogida_entrega = re.id
-          WHERE am.id_envio = @id_envio
-        `);
-
-      const particiones = particionesRes.recordset.map(p => {
-        const particion = {};
-        if (p.fecha_recogida) particion.fecha_recogida = p.fecha_recogida;
-        if (p.hora_recogida) particion.hora_recogida = p.hora_recogida;
-        if (p.hora_entrega) particion.hora_entrega = p.hora_entrega;
-        return particion;
-      });
+      } catch (err) {}
 
       historial.push({
         id_envio: envio.id,
         estado: envio.estado,
         fecha_creacion: envio.fecha_creacion,
-        origen: origen || "—",
-        destino: destino || "—",
+        origen,
+        destino,
         cliente: {
           nombre: cliente.nombre,
           apellido: cliente.apellido
-        },
-        particiones
+        }
       });
     }
 
@@ -240,8 +216,7 @@ async function obtenerHistorialCliente(req, res) {
 }
 
 
-
-// 4.- Reutilizar envío anterior
+  // 4.- Reutilizar envío anterior
 async function reutilizarEnvioAnterior(req, res) {
   const id_envio = parseInt(req.params.id_envio);
 
@@ -252,7 +227,7 @@ async function reutilizarEnvioAnterior(req, res) {
   try {
     const pool = await poolPromise;
 
-    // ✅ Obtener datos básicos del envío
+    // Obtener datos básicos del envío
     const envioRes = await pool.request()
       .input('id', sql.Int, id_envio)
       .query(`SELECT * FROM Envios WHERE id = @id`);
@@ -263,22 +238,15 @@ async function reutilizarEnvioAnterior(req, res) {
 
     const envio = envioRes.recordset[0];
 
-    // ✅ Obtener ubicación desde MongoDB
-    let direccion = null;
-    try {
-      direccion = await Direccion.findById(envio.id_ubicacion_mongo);
-    } catch (err) {
-      console.warn("⚠️ Error al obtener ubicación MongoDB:", err.message);
-    }
+    // Obtener ubicación desde MongoDB
+    const direccion = await Direccion.findById(envio.id_ubicacion_mongo);
 
-    // ✅ Obtener asignaciones del envío
+    // Obtener asignaciones del envío
     const asignaciones = await pool.request()
       .input('id_envio', sql.Int, id_envio)
       .query(`
         SELECT a.id AS id_asignacion, a.id_tipo_transporte, a.id_recogida_entrega,
-               r.fecha_recogida, 
-               FORMAT(r.hora_recogida, 'HH:mm') AS hora_recogida, 
-               FORMAT(r.hora_entrega, 'HH:mm') AS hora_entrega,
+               r.fecha_recogida, r.hora_recogida, r.hora_entrega,
                r.instrucciones_recogida, r.instrucciones_entrega,
                t.nombre AS tipo_transporte_nombre, t.descripcion AS tipo_transporte_descripcion
         FROM AsignacionMultiple a
@@ -287,40 +255,37 @@ async function reutilizarEnvioAnterior(req, res) {
         WHERE a.id_envio = @id_envio
       `);
 
-    const particiones = asignaciones.recordset.map(asignacion => {
-      // ✅ Limpiar valores nulos para no enviar textos como "Sin hora"
-      const recogidaEntrega = {};
-      if (asignacion.fecha_recogida) recogidaEntrega.fecha_recogida = asignacion.fecha_recogida;
-      if (asignacion.hora_recogida) recogidaEntrega.hora_recogida = asignacion.hora_recogida;
-      if (asignacion.hora_entrega) recogidaEntrega.hora_entrega = asignacion.hora_entrega;
-      if (asignacion.instrucciones_recogida) recogidaEntrega.instrucciones_recogida = asignacion.instrucciones_recogida;
-      if (asignacion.instrucciones_entrega) recogidaEntrega.instrucciones_entrega = asignacion.instrucciones_entrega;
+    const particiones = [];
 
-      return {
-        id_tipo_transporte: asignacion.id_tipo_transporte,
-        tipoTransporte: {
-          nombre: asignacion.tipo_transporte_nombre,
-          descripcion: asignacion.tipo_transporte_descripcion
-        },
-        recogidaEntrega,
-        cargas: []
-      };
-    });
-
-    // ✅ Obtener cargas específicas para cada asignación
-    for (const particion of particiones) {
+    for (const asignacion of asignaciones.recordset) {
+      // Obtener cargas específicas de esta asignación
       const cargasRes = await pool.request()
-        .input('id_asignacion', sql.Int, particion.id_asignacion)
+        .input('id_asignacion', sql.Int, asignacion.id_asignacion)
         .query(`
           SELECT c.*
           FROM AsignacionCarga ac
           INNER JOIN Carga c ON ac.id_carga = c.id
           WHERE ac.id_asignacion = @id_asignacion
         `);
-      particion.cargas = cargasRes.recordset;
+
+      particiones.push({
+        id_tipo_transporte: asignacion.id_tipo_transporte,
+        tipoTransporte: {
+          nombre: asignacion.tipo_transporte_nombre,
+          descripcion: asignacion.tipo_transporte_descripcion
+        },
+        recogidaEntrega: {
+          fecha_recogida: asignacion.fecha_recogida,
+          hora_recogida: asignacion.hora_recogida,
+          hora_entrega: asignacion.hora_entrega,
+          instrucciones_recogida: asignacion.instrucciones_recogida,
+          instrucciones_entrega: asignacion.instrucciones_entrega
+        },
+        cargas: cargasRes.recordset
+      });
     }
 
-    // ✅ Enviar estructura reutilizable
+    // Enviar estructura reutilizable
     return res.json({
       ubicacion: direccion,
       id_usuario_cliente: envio.id_usuario,
@@ -332,7 +297,6 @@ async function reutilizarEnvioAnterior(req, res) {
     res.status(500).json({ error: 'Error al obtener datos del envío' });
   }
 }
-
 
 
   

@@ -35,20 +35,14 @@ async function crearEnvioCompleto(req, res) {
         return res.status(400).json({ error: 'Cada partición debe incluir cargas, recogidaEntrega y tipo de transporte' });
       }
 
-      // ✅ Manejo correcto de horas y fechas
-      const fechaRecogida = r.fecha_recogida || null;
-      const horaRecogida = r.hora_recogida || null;
-      const horaEntrega = r.hora_entrega || null;
-      const instruccionesRecogida = r.instrucciones_recogida?.trim() || null;
-      const instruccionesEntrega = r.instrucciones_entrega?.trim() || null;
-
       // 3️⃣ Insertar RecogidaEntrega
+      const r = recogidaEntrega;
       const recogidaResult = await pool.request()
-        .input('fecha_recogida', sql.Date, fechaRecogida)
-        .input('hora_recogida', sql.Time, horaRecogida ? `${horaRecogida}:00` : null)
-        .input('hora_entrega', sql.Time, horaEntrega ? `${horaEntrega}:00` : null)
-        .input('instrucciones_recogida', sql.NVarChar, instruccionesRecogida)
-        .input('instrucciones_entrega', sql.NVarChar, instruccionesEntrega)
+        .input('fecha_recogida', sql.Date, r.fecha_recogida)
+        .input('hora_recogida', sql.Time, new Date(`1970-01-01T${r.hora_recogida}`))
+        .input('hora_entrega', sql.Time, new Date(`1970-01-01T${r.hora_entrega}`))
+        .input('instrucciones_recogida', sql.NVarChar, r.instrucciones_recogida || null)
+        .input('instrucciones_entrega', sql.NVarChar, r.instrucciones_entrega || null)
         .query(`
           INSERT INTO RecogidaEntrega (fecha_recogida, hora_recogida, hora_entrega, instrucciones_recogida, instrucciones_entrega)
           OUTPUT INSERTED.id
@@ -156,70 +150,48 @@ async function obtenerTodos(req, res) {
             WHERE am.id_envio = @id_envio
           `);
 
-        const particiones = await Promise.all(asignaciones.recordset.map(async asignacion => {
-          // ✅ Obtener cargas de esta asignación
-          const cargas = await pool.request()
-            .input('id_asignacion', sql.Int, asignacion.id)
-            .query(`
-              SELECT c.*
-              FROM AsignacionCarga ac
-              INNER JOIN Carga c ON ac.id_carga = c.id
-              WHERE ac.id_asignacion = @id_asignacion
-            `);
-        
-          // ✅ Obtener recogidaEntrega de esta asignación (manejo correcto de horas)
-          const recogidaRes = await pool.request()
-            .input('id', sql.Int, asignacion.id_recogida_entrega)
-            .query(`
-              SELECT 
-                fecha_recogida, 
-                FORMAT(hora_recogida, 'HH:mm') AS hora_recogida, 
-                FORMAT(hora_entrega, 'HH:mm') AS hora_entrega,
-                instrucciones_recogida, 
-                instrucciones_entrega
-              FROM RecogidaEntrega 
-              WHERE id = @id
-            `);
+          const particiones = await Promise.all(asignaciones.recordset.map(async asignacion => {
+            // ✅ Obtener cargas de esta asignación
+            const cargas = await pool.request()
+              .input('id_asignacion', sql.Int, asignacion.id)
+              .query(`
+                SELECT c.*
+                FROM AsignacionCarga ac
+                INNER JOIN Carga c ON ac.id_carga = c.id
+                WHERE ac.id_asignacion = @id_asignacion
+              `);
           
-          const recogida = recogidaRes.recordset[0] || {
-            fecha_recogida: null,
-            hora_recogida: null,
-            hora_entrega: null,
-            instrucciones_recogida: "Sin instrucciones",
-            instrucciones_entrega: "Sin instrucciones"
-          };
-        
-          // ✅ Obtener tipo de transporte
-          const transporteRes = await pool.request()
-            .input('id', sql.Int, asignacion.id_tipo_transporte)
-            .query(`SELECT * FROM TipoTransporte WHERE id = @id`);
+            // ✅ Obtener recogidaEntrega de esta asignación
+            const recogida = await pool.request()
+              .input('id', sql.Int, asignacion.id_recogida_entrega)
+              .query(`SELECT * FROM RecogidaEntrega WHERE id = @id`);
           
-          const transporte = transporteRes.recordset[0] || {
-            nombre: "Sin tipo",
-            descripcion: "Sin descripción"
-          };
-        
-          return {
-            id_asignacion: asignacion.id,
-            estado: asignacion.estado,
-            fecha_asignacion: asignacion.fecha_asignacion,
-            fecha_inicio: asignacion.fecha_inicio,
-            fecha_fin: asignacion.fecha_fin,
-            transportista: {
-              nombre: asignacion.nombre_transportista,
-              apellido: asignacion.apellido_transportista,
-              ci: asignacion.ci_transportista,
-              telefono: asignacion.telefono_transportista
-            },
-            vehiculo: {
-              placa: asignacion.placa,
-              tipo: asignacion.tipo_vehiculo
-            },
-            cargas: cargas.recordset,
-            recogidaEntrega: recogida,
-            tipoTransporte: transporte
-          };
-        }));
+            // ✅ Obtener tipo de transporte
+            const transporte = await pool.request()
+              .input('id', sql.Int, asignacion.id_tipo_transporte)
+              .query(`SELECT * FROM TipoTransporte WHERE id = @id`);
+          
+            return {
+              id_asignacion: asignacion.id,
+              estado: asignacion.estado,
+              fecha_asignacion: asignacion.fecha_asignacion,
+              fecha_inicio: asignacion.fecha_inicio,
+              fecha_fin: asignacion.fecha_fin,
+              transportista: {
+                nombre: asignacion.nombre_transportista,
+                apellido: asignacion.apellido_transportista,
+                ci: asignacion.ci_transportista,
+                telefono: asignacion.telefono_transportista
+              },
+              vehiculo: {
+                placa: asignacion.placa,
+                tipo: asignacion.tipo_vehiculo
+              },
+              cargas: cargas.recordset,
+              recogidaEntrega: recogida.recordset[0],
+              tipoTransporte: transporte.recordset[0]
+            };
+          }));
 
         envio.particiones = particiones;
 
@@ -252,7 +224,6 @@ async function obtenerTodos(req, res) {
     res.status(500).json({ error: 'Error al obtener envíos' });
   }
 }
-
 
 
 // 3.- Obtener envío por ID
@@ -314,11 +285,8 @@ async function obtenerPorId(req, res) {
                v.placa, v.tipo AS tipo_vehiculo,
                tp.nombre AS nombre_tipo_transporte,
                tp.descripcion AS descripcion_tipo_transporte,
-               re.fecha_recogida, 
-               FORMAT(re.hora_recogida, 'HH:mm') AS hora_recogida, 
-               FORMAT(re.hora_entrega, 'HH:mm') AS hora_entrega,
-               re.instrucciones_recogida, 
-               re.instrucciones_entrega
+               re.fecha_recogida, re.hora_recogida, re.hora_entrega,
+               re.instrucciones_recogida, re.instrucciones_entrega
         FROM AsignacionMultiple am
         LEFT JOIN Transportistas t ON am.id_transportista = t.id
         LEFT JOIN Usuarios u ON t.id_usuario = u.id
@@ -359,11 +327,11 @@ async function obtenerPorId(req, res) {
           descripcion: asignacion.descripcion_tipo_transporte
         },
         recogidaEntrega: {
-          fecha_recogida: asignacion.fecha_recogida || null,
-          hora_recogida: asignacion.hora_recogida || "Sin hora",
-          hora_entrega: asignacion.hora_entrega || "Sin hora",
-          instrucciones_recogida: asignacion.instrucciones_recogida?.trim() || "Sin instrucciones",
-          instrucciones_entrega: asignacion.instrucciones_entrega?.trim() || "Sin instrucciones"
+          fecha_recogida: asignacion.fecha_recogida,
+          hora_recogida: asignacion.hora_recogida,
+          hora_entrega: asignacion.hora_entrega,
+          instrucciones_recogida: asignacion.instrucciones_recogida,
+          instrucciones_entrega: asignacion.instrucciones_entrega
         },
         cargas: cargas.recordset
       };
@@ -436,20 +404,14 @@ async function asignarTransportistaYVehiculo(req, res) {
 
     const id_carga = cargaRes.recordset[0].id;
 
-    // ✅ Insertar RecogidaEntrega (manejo correcto de horas)
+    // Insertar RecogidaEntrega
     const r = recogidaEntrega;
-    const fechaRecogida = r.fecha_recogida || null;
-    const horaRecogida = r.hora_recogida || null;
-    const horaEntrega = r.hora_entrega || null;
-    const instruccionesRecogida = r.instrucciones_recogida?.trim() || "Sin instrucciones";
-    const instruccionesEntrega = r.instrucciones_entrega?.trim() || "Sin instrucciones";
-
     const recogidaResult = await pool.request()
-      .input('fecha_recogida', sql.Date, fechaRecogida)
-      .input('hora_recogida', sql.Time, horaRecogida ? new Date(`1970-01-01T${horaRecogida}`) : null)
-      .input('hora_entrega', sql.Time, horaEntrega ? new Date(`1970-01-01T${horaEntrega}`) : null)
-      .input('instrucciones_recogida', sql.NVarChar, instruccionesRecogida)
-      .input('instrucciones_entrega', sql.NVarChar, instruccionesEntrega)
+      .input('fecha_recogida', sql.Date, r.fecha_recogida)
+      .input('hora_recogida', sql.Time, new Date(`1970-01-01T${r.hora_recogida}`))
+      .input('hora_entrega', sql.Time, new Date(`1970-01-01T${r.hora_entrega}`))
+      .input('instrucciones_recogida', sql.NVarChar, r.instrucciones_recogida || null)
+      .input('instrucciones_entrega', sql.NVarChar, r.instrucciones_entrega || null)
       .query(`
         INSERT INTO RecogidaEntrega (fecha_recogida, hora_recogida, hora_entrega, instrucciones_recogida, instrucciones_entrega)
         OUTPUT INSERTED.id VALUES (@fecha_recogida, @hora_recogida, @hora_entrega, @instrucciones_recogida, @instrucciones_entrega)
@@ -631,13 +593,9 @@ async function obtenerMisEnvios(req, res) {
                    u.nombre AS nombre_transportista,
                    u.apellido AS apellido_transportista,
                    v.placa, v.tipo AS tipo_vehiculo,
-                   re.fecha_recogida, 
-                   FORMAT(re.hora_recogida, 'HH:mm') AS hora_recogida, 
-                   FORMAT(re.hora_entrega, 'HH:mm') AS hora_entrega,
-                   re.instrucciones_recogida, 
-                   re.instrucciones_entrega,
-                   tp.nombre AS tipo_transporte, 
-                   tp.descripcion AS descripcion_transporte
+                   re.fecha_recogida, re.hora_recogida, re.hora_entrega,
+                   re.instrucciones_recogida, re.instrucciones_entrega,
+                   tp.nombre AS tipo_transporte, tp.descripcion AS descripcion_transporte
             FROM AsignacionMultiple am
             LEFT JOIN Transportistas t ON am.id_transportista = t.id
             LEFT JOIN Usuarios u ON t.id_usuario = u.id
@@ -665,25 +623,25 @@ async function obtenerMisEnvios(req, res) {
             fecha_inicio: asignacion.fecha_inicio,
             fecha_fin: asignacion.fecha_fin,
             transportista: {
-              nombre: asignacion.nombre_transportista || "—",
-              apellido: asignacion.apellido_transportista || "—",
-              ci: asignacion.ci_transportista || "—",
-              telefono: asignacion.telefono_transportista || "—"
+              nombre: asignacion.nombre_transportista,
+              apellido: asignacion.apellido_transportista,
+              ci: asignacion.ci_transportista,
+              telefono: asignacion.telefono_transportista
             },
             vehiculo: {
-              placa: asignacion.placa || "—",
-              tipo: asignacion.tipo_vehiculo || "—"
+              placa: asignacion.placa,
+              tipo: asignacion.tipo_vehiculo
             },
             recogidaEntrega: {
-              fecha_recogida: asignacion.fecha_recogida || "Sin fecha",
-              hora_recogida: asignacion.hora_recogida || "Sin hora",
-              hora_entrega: asignacion.hora_entrega || "Sin hora",
-              instrucciones_recogida: asignacion.instrucciones_recogida || "Sin instrucciones",
-              instrucciones_entrega: asignacion.instrucciones_entrega || "Sin instrucciones"
+              fecha_recogida: asignacion.fecha_recogida,
+              hora_recogida: asignacion.hora_recogida,
+              hora_entrega: asignacion.hora_entrega,
+              instrucciones_recogida: asignacion.instrucciones_recogida,
+              instrucciones_entrega: asignacion.instrucciones_entrega
             },
             tipoTransporte: {
-              nombre: asignacion.tipo_transporte || "Sin tipo",
-              descripcion: asignacion.descripcion_transporte || "Sin descripción"
+              nombre: asignacion.tipo_transporte,
+              descripcion: asignacion.descripcion_transporte
             },
             cargas: cargasRes.recordset
           };
@@ -866,33 +824,17 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
           `);
         envio.cargas = cargas.recordset;
 
-        // ✅ Obtener datos de recogida/entrega con formato correcto de horas
+        // Obtener datos de recogida/entrega
         const recogidaRes = await pool.request()
           .input('id', sql.Int, asignacion.id_recogida_entrega)
-          .query(`
-            SELECT 
-              fecha_recogida,
-              FORMAT(hora_recogida, 'HH:mm') AS hora_recogida,
-              FORMAT(hora_entrega, 'HH:mm') AS hora_entrega,
-              ISNULL(instrucciones_recogida, 'Sin instrucciones') AS instrucciones_recogida,
-              ISNULL(instrucciones_entrega, 'Sin instrucciones') AS instrucciones_entrega
-            FROM RecogidaEntrega
-            WHERE id = @id
-          `);
-
-        envio.recogidaEntrega = recogidaRes.recordset[0] || {
-          fecha_recogida: "Sin fecha",
-          hora_recogida: "Sin hora",
-          hora_entrega: "Sin hora",
-          instrucciones_recogida: "Sin instrucciones",
-          instrucciones_entrega: "Sin instrucciones"
-        };
+          .query('SELECT * FROM RecogidaEntrega WHERE id = @id');
+        envio.recogidaEntrega = recogidaRes.recordset[0];
 
         // Obtener ubicación MongoDB
         const ubicacion = await Direccion.findById(asignacion.id_ubicacion_mongo);
         if (ubicacion) {
-          envio.nombre_origen = ubicacion.nombreOrigen || "—";
-          envio.nombre_destino = ubicacion.nombreDestino || "—";
+          envio.nombre_origen = ubicacion.nombreOrigen;
+          envio.nombre_destino = ubicacion.nombreDestino;
           envio.coordenadas_origen = ubicacion.coordenadasOrigen;
           envio.coordenadas_destino = ubicacion.coordenadasDestino;
           envio.rutaGeoJSON = ubicacion.rutaGeoJSON;
@@ -911,6 +853,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
     res.status(500).json({ error: 'Error interno al obtener los envíos' });
   }
 }
+
 
 
 
@@ -1284,9 +1227,7 @@ async function generarDocumentoEnvio(req, res) {
                t.ci AS ci_transportista, t.telefono AS telefono_transportista,
                v.placa, v.tipo AS tipo_vehiculo,
                tp.nombre AS nombre_tipo_transporte, tp.descripcion AS descripcion_tipo_transporte,
-               re.fecha_recogida, 
-               FORMAT(re.hora_recogida, 'hh:mm tt') AS hora_recogida, 
-               FORMAT(re.hora_entrega, 'hh:mm tt') AS hora_entrega,
+               re.fecha_recogida, re.hora_recogida, re.hora_entrega,
                re.instrucciones_recogida, re.instrucciones_entrega
         FROM AsignacionMultiple am
         LEFT JOIN Transportistas t ON am.id_transportista = t.id
@@ -1330,13 +1271,13 @@ async function generarDocumentoEnvio(req, res) {
         checklistIncidentes = incidentesRes.recordset[0] || null;
       }
 
-      // Incluir todos los datos de recogida y entrega
+      // Incluir todos los datos de recogida y entrega tal como están
       const recogidaEntrega = {
         fecha_recogida: asignacion.fecha_recogida || null,
-        hora_recogida: asignacion.hora_recogida || "Sin hora",
-        hora_entrega: asignacion.hora_entrega || "Sin hora",
-        instrucciones_recogida: asignacion.instrucciones_recogida || "Sin instrucciones",
-        instrucciones_entrega: asignacion.instrucciones_entrega || "Sin instrucciones"
+        hora_recogida: asignacion.hora_recogida || null,
+        hora_entrega: asignacion.hora_entrega || null,
+        instrucciones_recogida: asignacion.instrucciones_recogida || null,
+        instrucciones_entrega: asignacion.instrucciones_entrega || null
       };
 
       return {
@@ -1387,6 +1328,7 @@ async function generarDocumentoEnvio(req, res) {
 }
 
 
+
 // 12. Endpoint: Generar Documento de Partición (asignación específica)
 async function generarDocumentoParticion(req, res) {
   const id_asignacion = parseInt(req.params.id_asignacion);
@@ -1415,9 +1357,7 @@ async function generarDocumentoParticion(req, res) {
                t.ci AS ci_transportista, t.telefono AS telefono_transportista,
                ut.nombre AS nombre_transportista, ut.apellido AS apellido_transportista,
                tp.nombre AS nombre_tipo_transporte, tp.descripcion AS descripcion_tipo_transporte,
-               re.fecha_recogida, 
-               FORMAT(re.hora_recogida, 'hh:mm tt') AS hora_recogida, 
-               FORMAT(re.hora_entrega, 'hh:mm tt') AS hora_entrega,
+               re.fecha_recogida, re.hora_recogida, re.hora_entrega,
                re.instrucciones_recogida, re.instrucciones_entrega
         FROM AsignacionMultiple am
         INNER JOIN Envios e ON am.id_envio = e.id
@@ -1510,10 +1450,10 @@ async function generarDocumentoParticion(req, res) {
         },
         recogidaEntrega: {
           fecha_recogida: asignacion.fecha_recogida || null,
-          hora_recogida: asignacion.hora_recogida || "Sin hora",
-          hora_entrega: asignacion.hora_entrega || "Sin hora",
-          instrucciones_recogida: asignacion.instrucciones_recogida || "Sin instrucciones",
-          instrucciones_entrega: asignacion.instrucciones_entrega || "Sin instrucciones"
+          hora_recogida: asignacion.hora_recogida || null,
+          hora_entrega: asignacion.hora_entrega || null,
+          instrucciones_recogida: asignacion.instrucciones_recogida || null,
+          instrucciones_entrega: asignacion.instrucciones_entrega || null
         },
         cargas: cargasRes.recordset,
         firma: firma ? firma.imagenFirma : null,
@@ -1527,7 +1467,6 @@ async function generarDocumentoParticion(req, res) {
     res.status(500).json({ error: 'Error interno al generar documento' });
   }
 }
-
 
 
 
