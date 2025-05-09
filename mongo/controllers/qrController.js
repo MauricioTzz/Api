@@ -6,8 +6,7 @@ const Direccion = require('../models/ubicacion');
 const { sql, poolPromise } = require('../../config/sqlserver');
 const qrcode = require('qrcode');
 
-const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://mi-app.com';
-
+const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://orgtrackprueba.netlify.app';
 
 // 1️⃣ Obtener QR existente (no generar)
 async function obtenerQR(req, res) {

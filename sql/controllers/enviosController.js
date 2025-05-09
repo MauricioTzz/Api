@@ -667,6 +667,8 @@ async function obtenerMisEnvios(req, res) {
   }
 }
 
+
+
 // 6.- iniciar viaje 
 async function iniciarViaje(req, res) {
     const id_asignacion = parseInt(req.params.id);
@@ -764,12 +766,13 @@ async function iniciarViaje(req, res) {
         // 7️⃣ Generar QR automáticamente (si no existe)
         let qrToken = await QrToken.findOne({ id_asignacion });
 
+        const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://orgtrackprueba.netlify.app';
+
         if (!qrToken) {
             const nuevoToken = uuidv4();
 
             // 🔗 Construir URL completa para el QR
-            const baseUrl = process.env.FRONTEND_BASE_URL || 'https://tu-app.com';
-            const tokenUrl = `${baseUrl}/validar-qr/${nuevoToken}`;
+            const tokenUrl = `${FRONTEND_BASE_URL}/validar-qr/${nuevoToken}`;
             
             // Generar imagen QR
             const qrCodeDataURL = await qrcode.toDataURL(tokenUrl);
@@ -795,8 +798,7 @@ async function iniciarViaje(req, res) {
             });
         } else {
             // Si ya existe, solo devolvemos el QR existente
-            const baseUrl = process.env.FRONTEND_BASE_URL || 'https://tu-app.com';
-            const tokenUrl = `${baseUrl}/validar-qr/${qrToken.token}`;
+            const tokenUrl = `${FRONTEND_BASE_URL}/validar-qr/${qrToken.token}`;
             const qrCodeDataURL = await qrcode.toDataURL(tokenUrl);
 
             res.json({
