@@ -17,6 +17,7 @@
     "geolib": "^3.3.4",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.13.1",
-    "mssql": "^11.0.1"
+    "mssql": "^11.0.1",
+    "qrcode": "^1.5.4"
   }
 }

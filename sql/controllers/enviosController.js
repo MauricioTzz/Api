@@ -1,6 +1,10 @@
 const { sql, poolPromise } = require('../../config/sqlserver');
 const Direccion = require('../../mongo/models/ubicacion');
 const FirmaEnvio = require('../../mongo/models/firmaEnvio');
+const QrToken = require('../../mongo/models/qrToken');  // ✅ Importar el modelo QrToken
+const { v4: uuidv4 } = require('uuid');  // ✅ Importar para generar tokens únicos
+const qrcode = require('qrcode');  // ✅ Importar para generar las imágenes QR
+require('dotenv').config();
 
 // 1.- Crear envío completo con múltiples particiones y cargas (CLIENTE o ADMIN)
 async function crearEnvioCompleto(req, res) {
@@ -663,108 +667,152 @@ async function obtenerMisEnvios(req, res) {
   }
 }
 
-
-// 6.- Iniciar viaje (solo transportista asignado)
+// 6.- iniciar viaje 
 async function iniciarViaje(req, res) {
-  const id_asignacion = parseInt(req.params.id);
-  const userId = req.usuario.id;
-  const rol = req.usuario.rol;
+    const id_asignacion = parseInt(req.params.id);
+    const userId = req.usuario.id;
+    const rol = req.usuario.rol;
 
-  if (rol !== 'transportista') {
-    return res.status(403).json({ error: 'Solo los transportistas pueden iniciar el viaje' });
-  }
-
-  try {
-    const pool = await poolPromise;
-
-    // 1️⃣ Obtener ID del transportista autenticado
-    const transportistaRes = await pool.request()
-      .input('id_usuario', sql.Int, userId)
-      .query('SELECT id FROM Transportistas WHERE id_usuario = @id_usuario');
-
-    if (transportistaRes.recordset.length === 0) {
-      return res.status(403).json({ error: 'No se encontró al transportista' });
+    if (rol !== 'transportista') {
+        return res.status(403).json({ error: 'Solo los transportistas pueden iniciar el viaje' });
     }
 
-    const id_transportista = transportistaRes.recordset[0].id;
+    try {
+        const pool = await poolPromise;
 
-    // 2️⃣ Verificar asignación válida
-    const asignacionRes = await pool.request()
-      .input('id_asignacion', sql.Int, id_asignacion)
-      .input('id_transportista', sql.Int, id_transportista)
-      .query(`
-        SELECT * FROM AsignacionMultiple 
-        WHERE id = @id_asignacion AND id_transportista = @id_transportista AND estado = 'Pendiente'
-      `);
+        // 1️⃣ Obtener ID del transportista autenticado
+        const transportistaRes = await pool.request()
+            .input('id_usuario', sql.Int, userId)
+            .query('SELECT id FROM Transportistas WHERE id_usuario = @id_usuario');
 
-    if (asignacionRes.recordset.length === 0) {
-      return res.status(403).json({ error: 'No tienes acceso o la asignación no está disponible para iniciar' });
+        if (transportistaRes.recordset.length === 0) {
+            return res.status(403).json({ error: 'No se encontró al transportista' });
+        }
+
+        const id_transportista = transportistaRes.recordset[0].id;
+
+        // 2️⃣ Verificar asignación válida
+        const asignacionRes = await pool.request()
+            .input('id_asignacion', sql.Int, id_asignacion)
+            .input('id_transportista', sql.Int, id_transportista)
+            .query(`
+                SELECT am.*, e.id_usuario AS id_usuario_cliente
+                FROM AsignacionMultiple am
+                INNER JOIN Envios e ON am.id_envio = e.id
+                WHERE am.id = @id_asignacion AND am.id_transportista = @id_transportista AND am.estado = 'Pendiente'
+            `);
+
+        if (asignacionRes.recordset.length === 0) {
+            return res.status(403).json({ error: 'No tienes acceso o la asignación no está disponible para iniciar' });
+        }
+
+        const asignacion = asignacionRes.recordset[0];
+        const id_usuario_cliente = asignacion.id_usuario_cliente;
+
+        // 3️⃣ Verificar checklist por asignación
+        const checklistRes = await pool.request()
+            .input('id_asignacion', sql.Int, id_asignacion)
+            .query(`
+                SELECT id FROM ChecklistCondicionesTransporte WHERE id_asignacion = @id_asignacion
+            `);
+
+        if (checklistRes.recordset.length === 0) {
+            return res.status(400).json({ error: 'Debes completar el checklist antes de iniciar el viaje' });
+        }
+
+        // 4️⃣ Actualizar asignación
+        await pool.request()
+            .input('estado', sql.NVarChar, 'En curso')
+            .input('fecha_inicio', sql.DateTime, new Date())
+            .input('id', sql.Int, id_asignacion)
+            .query(`
+                UPDATE AsignacionMultiple 
+                SET estado = @estado, fecha_inicio = @fecha_inicio 
+                WHERE id = @id
+            `);
+
+        // 5️⃣ Actualizar estado de recursos
+        await pool.request()
+            .input('id', sql.Int, asignacion.id_transportista)
+            .query(`UPDATE Transportistas SET estado = 'En ruta' WHERE id = @id`);
+
+        await pool.request()
+            .input('id', sql.Int, asignacion.id_vehiculo)
+            .query(`UPDATE Vehiculos SET estado = 'En ruta' WHERE id = @id`);
+
+        // 6️⃣ Actualizar estado global del envío
+        const asignaciones = await pool.request()
+            .input('id_envio', sql.Int, asignacion.id_envio)
+            .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
+
+        const estados = asignaciones.recordset.map(a => a.estado);
+        let nuevoEstado = 'Asignado';
+
+        if (estados.every(e => e === 'Entregado')) {
+            nuevoEstado = 'Entregado';
+        } else if (estados.some(e => e === 'En curso')) {
+            nuevoEstado = 'En curso';
+        } else if (estados.some(e => e === 'Pendiente')) {
+            nuevoEstado = 'Asignado';
+        }
+
+        await pool.request()
+            .input('id_envio', sql.Int, asignacion.id_envio)
+            .input('estado', sql.NVarChar, nuevoEstado)
+            .query('UPDATE Envios SET estado = @estado WHERE id = @id_envio');
+
+        // 7️⃣ Generar QR automáticamente (si no existe)
+        let qrToken = await QrToken.findOne({ id_asignacion });
+
+        if (!qrToken) {
+            const nuevoToken = uuidv4();
+
+            // 🔗 Construir URL completa para el QR
+            const baseUrl = process.env.FRONTEND_BASE_URL || 'https://tu-app.com';
+            const tokenUrl = `${baseUrl}/validar-qr/${nuevoToken}`;
+            
+            // Generar imagen QR
+            const qrCodeDataURL = await qrcode.toDataURL(tokenUrl);
+
+            // Guardar en MongoDB
+            qrToken = new QrToken({
+                id_asignacion,
+                id_usuario_cliente,
+                token: nuevoToken,
+                usado: false,
+                fecha_expiracion: new Date(Date.now() + 1000 * 60 * 60 * 24) // 24 horas
+            });
+
+            await qrToken.save();
+
+            res.json({
+                mensaje: '✅ Viaje iniciado correctamente para esta asignación',
+                id_asignacion,
+                token: nuevoToken,
+                qrCodeUrl: tokenUrl,
+                qrCodeImage: qrCodeDataURL,
+                fecha_creacion: qrToken.fecha_creacion
+            });
+        } else {
+            // Si ya existe, solo devolvemos el QR existente
+            const baseUrl = process.env.FRONTEND_BASE_URL || 'https://tu-app.com';
+            const tokenUrl = `${baseUrl}/validar-qr/${qrToken.token}`;
+            const qrCodeDataURL = await qrcode.toDataURL(tokenUrl);
+
+            res.json({
+                mensaje: '✅ Viaje iniciado correctamente para esta asignación (QR ya existía)',
+                id_asignacion,
+                token: qrToken.token,
+                qrCodeUrl: tokenUrl,
+                qrCodeImage: qrCodeDataURL,
+                fecha_creacion: qrToken.fecha_creacion
+            });
+        }
+
+    } catch (err) {
+        console.error('❌ Error al iniciar viaje:', err);
+        res.status(500).json({ error: 'Error al iniciar el viaje' });
     }
-
-    const asignacion = asignacionRes.recordset[0];
-
-    // 3️⃣ Verificar checklist por asignación
-    const checklistRes = await pool.request()
-      .input('id_asignacion', sql.Int, id_asignacion)
-      .query(`
-        SELECT id FROM ChecklistCondicionesTransporte WHERE id_asignacion = @id_asignacion
-      `);
-
-    if (checklistRes.recordset.length === 0) {
-      return res.status(400).json({ error: 'Debes completar el checklist antes de iniciar el viaje' });
-    }
-
-    // 4️⃣ Actualizar asignación
-    await pool.request()
-      .input('estado', sql.NVarChar, 'En curso')
-      .input('fecha_inicio', sql.DateTime, new Date())
-      .input('id', sql.Int, id_asignacion)
-      .query(`
-        UPDATE AsignacionMultiple 
-        SET estado = @estado, fecha_inicio = @fecha_inicio 
-        WHERE id = @id
-      `);
-
-    // 5️⃣ Actualizar estado de recursos
-    await pool.request()
-      .input('id', sql.Int, asignacion.id_transportista)
-      .query(`UPDATE Transportistas SET estado = 'En ruta' WHERE id = @id`);
-
-    await pool.request()
-      .input('id', sql.Int, asignacion.id_vehiculo)
-      .query(`UPDATE Vehiculos SET estado = 'En ruta' WHERE id = @id`);
-
-    // 6️⃣ ACTUALIZAR ESTADO GLOBAL DEL ENVÍO
-    const asignaciones = await pool.request()
-      .input('id_envio', sql.Int, asignacion.id_envio)
-      .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
-
-    const estados = asignaciones.recordset.map(a => a.estado);
-    let nuevoEstado = 'Asignado';
-
-    if (estados.length === 0) {
-      nuevoEstado = 'Pendiente';
-    } else if (estados.every(e => e === 'Entregado')) {
-      nuevoEstado = 'Entregado';
-    } else if (estados.every(e => e === 'Pendiente')) {
-      nuevoEstado = 'Asignado';
-    } else if (estados.some(e => e === 'Entregado') && estados.some(e => e !== 'Entregado')) {
-      nuevoEstado = 'Parcialmente entregado';
-    } else if (estados.some(e => e === 'En curso')) {
-      nuevoEstado = 'En curso';
-    }
-
-    await pool.request()
-      .input('id_envio', sql.Int, asignacion.id_envio)
-      .input('estado', sql.NVarChar, nuevoEstado)
-      .query('UPDATE Envios SET estado = @estado WHERE id = @id_envio');
-
-    res.json({ mensaje: '✅ Viaje iniciado correctamente para esta asignación' });
-
-  } catch (err) {
-    console.error('❌ Error al iniciar viaje:', err);
-    res.status(500).json({ error: 'Error al iniciar el viaje' });
-  }
 }
 
 

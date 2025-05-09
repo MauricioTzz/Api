@@ -13,6 +13,8 @@ const rutasRecogidaEntrega = require('./sql/routes/recogidaEntregaRoutes');
 const rutasUbicaciones = require('./mongo/routes/ubicaciones');
 const rutasFirmasEnvio = require('./mongo/routes/firmaEnvioRoutes');
 
+const rutasQrTokens = require('./mongo/routes/qrRoutes');
+
 const rutasEnviosAdmin = require('./sql/routes/enviosAdminRoutes');
 
 
@@ -36,6 +38,7 @@ app.use('/api/transportistas', rutasTransportistas);
 app.use('/api/envios', rutasEnvios);
 app.use('/api/test', testRoutes);
 app.use('/api/ubicaciones', rutasUbicaciones);
+app.use('/api/qr', rutasQrTokens);
 
 app.use('/api/envios/admin', rutasEnviosAdmin);
 app.use('/api/envios', rutasFirmasEnvio);
