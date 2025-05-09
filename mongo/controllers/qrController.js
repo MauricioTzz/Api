@@ -11,6 +11,7 @@ const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://orgtrackprue
 // 1️⃣ Obtener o Generar QR en Base64
 async function obtenerQR(req, res) {
     const { id_asignacion } = req.params;
+    const id_usuario_cliente = req.usuario.id;
 
     try {
         // Buscar el QR en MongoDB
@@ -24,6 +25,7 @@ async function obtenerQR(req, res) {
             // Guardar el token y la imagen en MongoDB
             qrToken = new QrToken({
                 id_asignacion,
+                id_usuario_cliente,
                 token: nuevoToken,
                 imagenQR: qrBase64,
                 usado: false,
@@ -55,6 +57,7 @@ async function generarQRBase64(token) {
     
     // Generar QR en base64
     const qrBase64 = await qrcode.toDataURL(tokenUrl, {
+        margin: 1,
         color: {
             dark: '#000000',
             light: '#ffffff'
@@ -75,6 +78,11 @@ async function validarQR(req, res) {
 
         if (!qrToken) {
             return res.status(404).json({ error: 'QR no encontrado o ya fue usado' });
+        }
+
+        // Verificar si el usuario es el propietario del QR
+        if (qrToken.id_usuario_cliente !== id_usuario_cliente) {
+            return res.status(403).json({ error: 'No tienes permiso para acceder a esta partición' });
         }
 
         const id_asignacion = qrToken.id_asignacion;
