@@ -1,11 +1,13 @@
+require('dotenv').config();
+
 const QrToken = require('../models/qrToken');
 const FirmaEnvio = require('../models/firmaEnvio');
 const Direccion = require('../models/ubicacion');
 const { sql, poolPromise } = require('../../config/sqlserver');
 const qrcode = require('qrcode');
-require('dotenv').config();
 
-const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://tu-app.com';
+const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://mi-app.com';
+
 
 // 1️⃣ Obtener QR existente (no generar)
 async function obtenerQR(req, res) {
