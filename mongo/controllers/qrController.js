@@ -1,35 +1,44 @@
 require('dotenv').config();
-
 const QrToken = require('../models/qrToken');
 const FirmaEnvio = require('../models/firmaEnvio');
 const Direccion = require('../models/ubicacion');
 const { sql, poolPromise } = require('../../config/sqlserver');
 const qrcode = require('qrcode');
+const { v4: uuidv4 } = require('uuid');
 
 const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://orgtrackprueba.netlify.app';
 
-// 1️⃣ Obtener QR existente (no generar)
+// 1️⃣ Obtener o Generar QR en Base64
 async function obtenerQR(req, res) {
     const { id_asignacion } = req.params;
 
     try {
         // Buscar el QR en MongoDB
-        const qrToken = await QrToken.findOne({ id_asignacion });
+        let qrToken = await QrToken.findOne({ id_asignacion });
 
+        // Si no existe, generar uno nuevo
         if (!qrToken) {
-            return res.status(404).json({ error: 'QR no encontrado para esta asignación' });
+            const nuevoToken = uuidv4();
+            const qrBase64 = await generarQRBase64(nuevoToken);
+            
+            // Guardar el token y la imagen en MongoDB
+            qrToken = new QrToken({
+                id_asignacion,
+                token: nuevoToken,
+                imagenQR: qrBase64,
+                usado: false,
+                fecha_expiracion: new Date(Date.now() + 1000 * 60 * 60 * 24) // 24 horas
+            });
+
+            await qrToken.save();
         }
 
-        // Generar URL y QR
-        const tokenUrl = `${FRONTEND_BASE_URL}/validar-qr/${qrToken.token}`;
-        const qrCodeDataURL = await qrcode.toDataURL(tokenUrl);
-
+        // Responder con los datos del QR
         return res.status(200).json({
             mensaje: '✅ QR encontrado correctamente',
             id_asignacion: qrToken.id_asignacion,
             token: qrToken.token,
-            qrCodeUrl: tokenUrl,
-            qrCodeImage: qrCodeDataURL,
+            imagenQR: qrToken.imagenQR,
             usado: qrToken.usado,
             fecha_creacion: qrToken.fecha_creacion
         });
@@ -38,6 +47,21 @@ async function obtenerQR(req, res) {
         console.error('❌ Error al obtener QR:', error);
         return res.status(500).json({ error: 'Error interno al obtener QR' });
     }
+}
+
+// ✅ Función para generar QR en Base64
+async function generarQRBase64(token) {
+    const tokenUrl = `${FRONTEND_BASE_URL}/validar-qr/${token}`;
+    
+    // Generar QR en base64
+    const qrBase64 = await qrcode.toDataURL(tokenUrl, {
+        color: {
+            dark: '#000000',
+            light: '#ffffff'
+        }
+    });
+
+    return qrBase64;
 }
 
 // 2️⃣ Validar QR y devolver detalles de la partición
@@ -88,17 +112,13 @@ async function validarQR(req, res) {
         // Obtener ubicación desde MongoDB
         const ubicacion = await Direccion.findById(detalles.id_ubicacion_mongo).lean();
 
-        // Verificar si ya existe firma para esta asignación
-        const firmaExistente = await FirmaEnvio.findOne({ id_asignacion });
-
         return res.status(200).json({
             particion: {
                 ...detalles,
                 nombre_origen: ubicacion?.nombreOrigen || '—',
                 nombre_destino: ubicacion?.nombreDestino || '—',
                 coordenadas_origen: ubicacion?.coordenadasOrigen || [],
-                coordenadas_destino: ubicacion?.coordenadasDestino || [],
-                firma_existente: !!firmaExistente
+                coordenadas_destino: ubicacion?.coordenadasDestino || []
             }
         });
 

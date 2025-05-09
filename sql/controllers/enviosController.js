@@ -669,7 +669,7 @@ async function obtenerMisEnvios(req, res) {
 
 
 
-// 6.- iniciar viaje 
+// 6.- iniciar viaje (con generación de QR en base64)
 async function iniciarViaje(req, res) {
     const id_asignacion = parseInt(req.params.id);
     const userId = req.usuario.id;
@@ -766,22 +766,21 @@ async function iniciarViaje(req, res) {
         // 7️⃣ Generar QR automáticamente (si no existe)
         let qrToken = await QrToken.findOne({ id_asignacion });
 
-        const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || 'https://orgtrackprueba.netlify.app';
-
         if (!qrToken) {
             const nuevoToken = uuidv4();
 
             // 🔗 Construir URL completa para el QR
-            const tokenUrl = `${FRONTEND_BASE_URL}/validar-qr/${nuevoToken}`;
-            
-            // Generar imagen QR
-            const qrCodeDataURL = await qrcode.toDataURL(tokenUrl);
+            const tokenUrl = `${process.env.FRONTEND_BASE_URL || 'https://orgtrackprueba.netlify.app'}/validar-qr/${nuevoToken}`;
+
+            // Generar imagen QR en base64
+            const qrBase64 = await qrcode.toDataURL(tokenUrl);
 
             // Guardar en MongoDB
             qrToken = new QrToken({
                 id_asignacion,
                 id_usuario_cliente,
                 token: nuevoToken,
+                imagenQR: qrBase64,
                 usado: false,
                 fecha_expiracion: new Date(Date.now() + 1000 * 60 * 60 * 24) // 24 horas
             });
@@ -792,21 +791,16 @@ async function iniciarViaje(req, res) {
                 mensaje: '✅ Viaje iniciado correctamente para esta asignación',
                 id_asignacion,
                 token: nuevoToken,
-                qrCodeUrl: tokenUrl,
-                qrCodeImage: qrCodeDataURL,
+                imagenQR: qrBase64,
                 fecha_creacion: qrToken.fecha_creacion
             });
         } else {
             // Si ya existe, solo devolvemos el QR existente
-            const tokenUrl = `${FRONTEND_BASE_URL}/validar-qr/${qrToken.token}`;
-            const qrCodeDataURL = await qrcode.toDataURL(tokenUrl);
-
             res.json({
                 mensaje: '✅ Viaje iniciado correctamente para esta asignación (QR ya existía)',
                 id_asignacion,
                 token: qrToken.token,
-                qrCodeUrl: tokenUrl,
-                qrCodeImage: qrCodeDataURL,
+                imagenQR: qrToken.imagenQR,
                 fecha_creacion: qrToken.fecha_creacion
             });
         }
