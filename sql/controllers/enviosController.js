@@ -1530,18 +1530,15 @@ async function obtenerParticionesEnCursoCliente(req, res) {
         const particionesRes = await pool.request()
             .input('id_usuario', sql.Int, userId)
             .query(`
-                SELECT am.*, 
-                       e.id AS id_envio, 
-                       e.estado AS estado_envio,
-                       u.nombre AS nombre_cliente, 
-                       u.apellido AS apellido_cliente,
+                SELECT am.id AS id_asignacion, am.estado, am.fecha_asignacion, am.fecha_inicio, 
+                       am.id_envio, am.id_vehiculo, am.id_tipo_transporte, am.id_recogida_entrega,
+                       e.id_ubicacion_mongo,
                        v.placa, v.tipo AS tipo_vehiculo,
                        tp.nombre AS nombre_tipo_transporte, tp.descripcion AS descripcion_tipo_transporte,
                        re.fecha_recogida, re.hora_recogida, re.hora_entrega,
                        re.instrucciones_recogida, re.instrucciones_entrega
                 FROM AsignacionMultiple am
                 INNER JOIN Envios e ON am.id_envio = e.id
-                INNER JOIN Usuarios u ON e.id_usuario = u.id
                 LEFT JOIN Vehiculos v ON am.id_vehiculo = v.id
                 LEFT JOIN TipoTransporte tp ON am.id_tipo_transporte = tp.id
                 LEFT JOIN RecogidaEntrega re ON am.id_recogida_entrega = re.id
@@ -1549,14 +1546,22 @@ async function obtenerParticionesEnCursoCliente(req, res) {
             `);
 
         const particiones = await Promise.all(particionesRes.recordset.map(async particion => {
-            // Obtener ubicación (MongoDB)
-            const ubicacion = await Direccion.findById(particion.id_envio);
-            const nombre_origen = ubicacion?.nombreOrigen || "—";
-            const nombre_destino = ubicacion?.nombreDestino || "—";
+            // ✅ Obtener ubicación (MongoDB)
+            let nombre_origen = "—";
+            let nombre_destino = "—";
+            try {
+                const ubicacion = await Direccion.findById(particion.id_ubicacion_mongo);
+                if (ubicacion) {
+                    nombre_origen = ubicacion.nombreOrigen || "—";
+                    nombre_destino = ubicacion.nombreDestino || "—";
+                }
+            } catch (errMongo) {
+                console.warn("⚠️ Error obteniendo ubicación MongoDB:", errMongo.message);
+            }
 
-            // Obtener cargas
+            // ✅ Obtener cargas
             const cargasRes = await pool.request()
-                .input('id_asignacion', sql.Int, particion.id)
+                .input('id_asignacion', sql.Int, particion.id_asignacion)
                 .query(`
                     SELECT c.*
                     FROM AsignacionCarga ac
@@ -1565,7 +1570,7 @@ async function obtenerParticionesEnCursoCliente(req, res) {
                 `);
 
             return {
-                id_asignacion: particion.id,
+                id_asignacion: particion.id_asignacion,
                 estado: particion.estado,
                 fecha_asignacion: particion.fecha_asignacion,
                 fecha_inicio: particion.fecha_inicio,
