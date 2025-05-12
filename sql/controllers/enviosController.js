@@ -770,7 +770,7 @@ async function iniciarViaje(req, res) {
             const nuevoToken = uuidv4();
 
             // 🔗 Construir URL completa para el QR
-            const tokenUrl = `${process.env.FRONTEND_BASE_URL || 'https://orgtrackprueba.netlify.app'}/validar-qr/${nuevoToken}`;
+            const tokenUrl = `${process.env.FRONTEND_BASE_URL || 'https://orgtrackprueba.netlify.app'}/login.html`;
 
             // Generar imagen QR en base64
             const qrBase64 = await qrcode.toDataURL(tokenUrl);
