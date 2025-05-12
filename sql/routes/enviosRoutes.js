@@ -19,14 +19,11 @@ router.get('/documento-particion/:id_asignacion', verificarToken, controller.gen
 router.get('/', verificarToken, soloAdmin, controller.obtenerTodos);
 router.post('/:id/checklist-condiciones', verificarToken, controller.registrarChecklistCondiciones);
 router.post('/:id/checklist-incidentes', verificarToken, controller.registrarChecklistIncidentes);
+router.get('/particiones-en-curso', verificarToken, controller.obtenerParticionesEnCursoCliente);
 
 
 // ⚠️ Esta debe ir al final
 router.get('/:id', verificarToken, controller.obtenerPorId);
-
-
-
-
 
 
 module.exports = router;

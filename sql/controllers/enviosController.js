@@ -5,7 +5,7 @@ const QrToken = require('../../mongo/models/qrToken');  // Importar el modelo Qr
 const { v4: uuidv4 } = require('uuid');  // Importar para generar tokens únicos
 const qrcode = require('qrcode');  // Importar para generar las imágenes QR
 require('dotenv').config();
-  
+
 // 1.- Crear envío completo con múltiples particiones y cargas (CLIENTE o ADMIN)
 async function crearEnvioCompleto(req, res) {
   try {
@@ -1513,6 +1513,92 @@ async function generarDocumentoParticion(req, res) {
 }
 
 
+// 13. Endpoint para obtener solo particiones en curso del cliente
+async function obtenerParticionesEnCursoCliente(req, res) {
+    const userId = req.usuario.id;
+    const rol = req.usuario.rol;
+
+    // Solo clientes pueden acceder a este endpoint
+    if (rol !== 'cliente') {
+        return res.status(403).json({ error: 'Solo los clientes pueden ver sus particiones en curso' });
+    }
+
+    try {
+        const pool = await poolPromise;
+
+        // 1️⃣ Obtener particiones en curso del cliente
+        const particionesRes = await pool.request()
+            .input('id_usuario', sql.Int, userId)
+            .query(`
+                SELECT am.*, 
+                       e.id AS id_envio, 
+                       e.estado AS estado_envio,
+                       u.nombre AS nombre_cliente, 
+                       u.apellido AS apellido_cliente,
+                       v.placa, v.tipo AS tipo_vehiculo,
+                       tp.nombre AS nombre_tipo_transporte, tp.descripcion AS descripcion_tipo_transporte,
+                       re.fecha_recogida, re.hora_recogida, re.hora_entrega,
+                       re.instrucciones_recogida, re.instrucciones_entrega
+                FROM AsignacionMultiple am
+                INNER JOIN Envios e ON am.id_envio = e.id
+                INNER JOIN Usuarios u ON e.id_usuario = u.id
+                LEFT JOIN Vehiculos v ON am.id_vehiculo = v.id
+                LEFT JOIN TipoTransporte tp ON am.id_tipo_transporte = tp.id
+                LEFT JOIN RecogidaEntrega re ON am.id_recogida_entrega = re.id
+                WHERE e.id_usuario = @id_usuario AND am.estado = 'En curso'
+            `);
+
+        const particiones = await Promise.all(particionesRes.recordset.map(async particion => {
+            // Obtener ubicación (MongoDB)
+            const ubicacion = await Direccion.findById(particion.id_envio);
+            const nombre_origen = ubicacion?.nombreOrigen || "—";
+            const nombre_destino = ubicacion?.nombreDestino || "—";
+
+            // Obtener cargas
+            const cargasRes = await pool.request()
+                .input('id_asignacion', sql.Int, particion.id)
+                .query(`
+                    SELECT c.*
+                    FROM AsignacionCarga ac
+                    INNER JOIN Carga c ON ac.id_carga = c.id
+                    WHERE ac.id_asignacion = @id_asignacion
+                `);
+
+            return {
+                id_asignacion: particion.id,
+                estado: particion.estado,
+                fecha_asignacion: particion.fecha_asignacion,
+                fecha_inicio: particion.fecha_inicio,
+                nombre_origen,
+                nombre_destino,
+                vehiculo: {
+                    placa: particion.placa,
+                    tipo: particion.tipo_vehiculo
+                },
+                tipoTransporte: {
+                    nombre: particion.nombre_tipo_transporte,
+                    descripcion: particion.descripcion_tipo_transporte
+                },
+                recogidaEntrega: {
+                    fecha_recogida: particion.fecha_recogida,
+                    hora_recogida: particion.hora_recogida,
+                    hora_entrega: particion.hora_entrega,
+                    instrucciones_recogida: particion.instrucciones_recogida,
+                    instrucciones_entrega: particion.instrucciones_entrega
+                },
+                cargas: cargasRes.recordset
+            };
+        }));
+
+        res.json(particiones);
+
+    } catch (error) {
+        console.error('❌ Error al obtener particiones en curso:', error);
+        res.status(500).json({ error: 'Error interno al obtener particiones en curso' });
+    }
+}
+
+
 
 module.exports = {
   crearEnvioCompleto,
@@ -1528,5 +1614,6 @@ module.exports = {
   registrarChecklistIncidentes,
   actualizarEstadoGlobalEnvio,
   generarDocumentoEnvio,
-  generarDocumentoParticion
+  generarDocumentoParticion,
+  obtenerParticionesEnCursoCliente
 };

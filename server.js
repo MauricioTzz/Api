@@ -52,9 +52,9 @@ app.get('/api/test-sql', async (req, res) => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query('SELECT TOP 1 * FROM Usuarios');
-    res.json({ message: '✅ SQL Server conectado', resultado: result.recordset });
+    res.json({ message: 'SQL Server conectado', resultado: result.recordset });
   } catch (err) {
-    console.error('❌ Error en consulta SQL:', err);
+    console.error('Error en consulta SQL:', err);
     res.status(500).json({ error: 'No se pudo conectar a SQL Server' });
   }
 });
@@ -64,5 +64,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
