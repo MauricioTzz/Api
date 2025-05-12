@@ -1,15 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { verificarToken } = require('../../auth/jwt');
-const { obtenerQR, validarQR, marcarQRUsado } = require('../controllers/qrController');
+const { obtenerQR } = require('../controllers/qrController');
+const { verificarToken, soloTransportista } = require('../auth/jwt');
 
-// Ruta para generar QR (solo transportista)
-router.get('/obtener/:id_asignacion', verificarToken, obtenerQR);
-
-// Ruta para validar QR y obtener detalles de la partición usando el token
-router.get('/validar/:token', verificarToken, validarQR);  // 🔄 Ahora usa el token en lugar del id_asignacion
-
-// Ruta para marcar QR como usado (cuando se firma) usando el token
-router.put('/marcar-usado/:token', verificarToken, marcarQRUsado);
+// ✅ Ruta para obtener el QR de una asignación, solo transportistas autenticados
+router.get('/api/qr/:id_asignacion', verificarToken, soloTransportista, obtenerQR);
 
 module.exports = router;

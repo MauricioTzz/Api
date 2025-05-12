@@ -1,11 +1,11 @@
 const { sql, poolPromise } = require('../../config/sqlserver');
 const Direccion = require('../../mongo/models/ubicacion');
 const FirmaEnvio = require('../../mongo/models/firmaEnvio');
-const QrToken = require('../../mongo/models/qrToken');  // ✅ Importar el modelo QrToken
-const { v4: uuidv4 } = require('uuid');  // ✅ Importar para generar tokens únicos
-const qrcode = require('qrcode');  // ✅ Importar para generar las imágenes QR
+const QrToken = require('../../mongo/models/qrToken');  // Importar el modelo QrToken
+const { v4: uuidv4 } = require('uuid');  // Importar para generar tokens únicos
+const qrcode = require('qrcode');  // Importar para generar las imágenes QR
 require('dotenv').config();
-
+  
 // 1.- Crear envío completo con múltiples particiones y cargas (CLIENTE o ADMIN)
 async function crearEnvioCompleto(req, res) {
   try {
