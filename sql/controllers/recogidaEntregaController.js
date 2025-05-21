@@ -35,7 +35,7 @@ async function crear(req, res) {
 
     res.status(201).json({ mensaje: 'Registro de recogida/entrega creado', id: resultado.recordset[0].id });
   } catch (err) {
-    console.error('❌ Error al crear recogida/entrega:', err);
+    console.error('Error al crear recogida/entrega:', err);
     res.status(500).json({ error: 'Error en el servidor' });
   }
 }

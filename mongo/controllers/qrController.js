@@ -56,11 +56,11 @@ async function obtenerQR(req, res) {
             usado: qrToken.usado,
             fecha_creacion: qrToken.fecha_creacion,
             fecha_expiracion: qrToken.fecha_expiracion,
-            frontend_url: `${process.env.FRONTEND_BASE_URL}/validar-qr/${qrToken.token}` // ✅ Incluye la URL completa
+            frontend_url: `${process.env.FRONTEND_BASE_URL}/validar-qr/${qrToken.token}` // Incluye la URL completa
         });
 
     } catch (error) {
-        console.error('❌ Error al obtener QR:', error);
+        console.error('Error al obtener QR:', error);
         return res.status(500).json({ error: 'Error interno al obtener QR' });
     }
 }

@@ -6,7 +6,7 @@ async function obtenerTodos(req, res) {
     const result = await pool.request().query('SELECT * FROM TipoTransporte');
     res.json(result.recordset);
   } catch (err) {
-    console.error('❌ Error al obtener tipos de transporte:', err);
+    console.error('Error al obtener tipos de transporte:', err);
     res.status(500).json({ error: 'Error al obtener tipos de transporte' });
   }
 }

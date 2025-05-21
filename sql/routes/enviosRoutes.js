@@ -5,7 +5,7 @@ const controller = require('../controllers/enviosController');
 
 
 
-// ✅ Primero las rutas específicas
+// Primero las rutas específicas
 router.get('/mis-envios', verificarToken, controller.obtenerMisEnvios);
 router.get('/mis-envios-transportista', verificarToken, controller.obtenerEnviosAsignadosTransportista);
 router.post('/', verificarToken, controller.crearEnvioCompleto);
@@ -22,7 +22,7 @@ router.post('/:id/checklist-incidentes', verificarToken, controller.registrarChe
 router.get('/particiones-en-curso', verificarToken, controller.obtenerParticionesEnCursoCliente);
 
 
-// ⚠️ Esta debe ir al final
+// Esta debe ir al final
 router.get('/:id', verificarToken, controller.obtenerPorId);
 
 

@@ -7,7 +7,7 @@ async function obtenerTodos(req, res) {
     const result = await pool.request().query('SELECT * FROM Usuarios');
     res.json(result.recordset);
   } catch (err) {
-    console.error('❌ Error al obtener usuarios:', err);
+    console.error('Error al obtener usuarios:', err);
     res.status(500).json({ error: 'Error al obtener usuarios' });
   }
 }
@@ -26,7 +26,7 @@ async function obtenerPorId(req, res) {
 
     res.json(result.recordset[0]);
   } catch (err) {
-    console.error('❌ Error al obtener usuario:', err);
+    console.error('Error al obtener usuario:', err);
     res.status(500).json({ error: 'Error al obtener usuario' });
   }
 }
@@ -51,7 +51,7 @@ async function editar(req, res) {
 
     res.json({ mensaje: 'Usuario actualizado correctamente' });
   } catch (err) {
-    console.error('❌ Error al editar usuario:', err);
+    console.error('Error al editar usuario:', err);
     res.status(500).json({ error: 'Error al editar usuario' });
   }
 }
@@ -70,13 +70,13 @@ async function eliminar(req, res) {
 
     res.json({ mensaje: 'Usuario eliminado correctamente' });
   } catch (err) {
-    console.error('❌ Error al eliminar usuario:', err);
+    console.error('Error al eliminar usuario:', err);
     res.status(500).json({ error: 'Error al eliminar usuario' });
   }
 }
 
 
-// ✅ NUEVA FUNCIÓN: Obtener todos los clientes
+// NUEVA FUNCIÓN: Obtener todos los clientes
 async function obtenerClientes(req, res) {
   try {
     const pool = await poolPromise;
@@ -84,7 +84,7 @@ async function obtenerClientes(req, res) {
       .query(`SELECT id, nombre, apellido, correo FROM Usuarios WHERE rol = 'cliente'`);
     res.json(result.recordset);
   } catch (err) {
-    console.error('❌ Error al obtener clientes:', err);
+    console.error('Error al obtener clientes:', err);
     res.status(500).json({ error: 'Error al obtener clientes' });
   }
 }

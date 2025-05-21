@@ -1,9 +1,9 @@
 const { sql, poolPromise } = require('../../config/sqlserver');
 const Direccion = require('../../mongo/models/ubicacion');
 const FirmaEnvio = require('../../mongo/models/firmaEnvio');
-const QrToken = require('../../mongo/models/qrToken');  // Importar el modelo QrToken
-const { v4: uuidv4 } = require('uuid');  // Importar para generar tokens únicos
-const qrcode = require('qrcode');  // Importar para generar las imágenes QR
+const QrToken = require('../../mongo/models/qrToken');  
+const { v4: uuidv4 } = require('uuid');  // para generar tokens únicos
+const qrcode = require('qrcode');  // para generar las imágenes QR
 require('dotenv').config();
 
 // 1.- Crear envío completo con múltiples particiones y cargas (CLIENTE o ADMIN)
@@ -18,7 +18,7 @@ async function crearEnvioCompleto(req, res) {
 
     const pool = await poolPromise;
 
-    // 1️⃣ Insertar envío principal
+    // 1.1- Insertar envío principal
     const envioResult = await pool.request()
       .input('id_usuario', sql.Int, id_usuario_cliente)
       .input('id_ubicacion_mongo', sql.NVarChar, id_ubicacion_mongo)
@@ -31,7 +31,7 @@ async function crearEnvioCompleto(req, res) {
 
     const id_envio = envioResult.recordset[0].id;
 
-    // 2️⃣ Procesar particiones
+    // 1.2- Procesar particiones
     for (const particion of particiones) {
       const { cargas, recogidaEntrega, id_tipo_transporte } = particion;
 
@@ -39,7 +39,7 @@ async function crearEnvioCompleto(req, res) {
         return res.status(400).json({ error: 'Cada partición debe incluir cargas, recogidaEntrega y tipo de transporte' });
       }
 
-      // 3️⃣ Insertar RecogidaEntrega
+      // 1.3- Insertar RecogidaEntrega
       const r = recogidaEntrega;
       const recogidaResult = await pool.request()
         .input('fecha_recogida', sql.Date, r.fecha_recogida)
@@ -55,7 +55,7 @@ async function crearEnvioCompleto(req, res) {
 
       const id_recogida_entrega = recogidaResult.recordset[0].id;
 
-      // 4️⃣ Insertar AsignacionMultiple SIN transportista ni vehículo
+      // 1.4- Insertar AsignacionMultiple SIN transportista ni vehículo
       const asignacionRes = await pool.request()
         .input('id_envio', sql.Int, id_envio)
         .input('id_tipo_transporte', sql.Int, id_tipo_transporte)
@@ -69,7 +69,7 @@ async function crearEnvioCompleto(req, res) {
 
       const id_asignacion = asignacionRes.recordset[0].id;
 
-      // 5️⃣ Insertar todas las cargas de esta partición
+      // 1.5- Insertar todas las cargas de esta partición
       for (const carga of cargas) {
         const cargaRes = await pool.request()
           .input('tipo', sql.NVarChar, carga.tipo)
@@ -85,7 +85,7 @@ async function crearEnvioCompleto(req, res) {
 
         const id_carga = cargaRes.recordset[0].id;
 
-        // 🔗 Relacionar carga con asignación
+        // Relacionar carga con asignación
         await pool.request()
           .input('id_asignacion', sql.Int, id_asignacion)
           .input('id_carga', sql.Int, id_carga)
@@ -97,12 +97,12 @@ async function crearEnvioCompleto(req, res) {
     }
 
     return res.status(201).json({
-      mensaje: '✅ Envío creado exitosamente para el cliente',
+      mensaje: 'Envío creado exitosamente para el cliente',
       id_envio
     });
 
   } catch (err) {
-    console.error('❌ Error al crear envío completo cliente:', err);
+    console.error('Error al crear envío completo cliente:', err);
     return res.status(500).json({ error: 'Error interno al crear envío (cliente)' });
   }
 }
@@ -155,7 +155,7 @@ async function obtenerTodos(req, res) {
           `);
 
           const particiones = await Promise.all(asignaciones.recordset.map(async asignacion => {
-            // ✅ Obtener cargas de esta asignación
+            // Obtener cargas de esta asignación
             const cargas = await pool.request()
               .input('id_asignacion', sql.Int, asignacion.id)
               .query(`
@@ -165,12 +165,12 @@ async function obtenerTodos(req, res) {
                 WHERE ac.id_asignacion = @id_asignacion
               `);
           
-            // ✅ Obtener recogidaEntrega de esta asignación
+            // Obtener recogidaEntrega de esta asignación
             const recogida = await pool.request()
               .input('id', sql.Int, asignacion.id_recogida_entrega)
               .query(`SELECT * FROM RecogidaEntrega WHERE id = @id`);
           
-            // ✅ Obtener tipo de transporte
+            // Obtener tipo de transporte
             const transporte = await pool.request()
               .input('id', sql.Int, asignacion.id_tipo_transporte)
               .query(`SELECT * FROM TipoTransporte WHERE id = @id`);
@@ -215,7 +215,7 @@ async function obtenerTodos(req, res) {
         }
 
       } catch (errInterno) {
-        console.warn("⚠️ Error procesando envío ID:", envio.id, errInterno.message);
+        console.warn("Error procesando envío ID:", envio.id, errInterno.message);
       }
 
       return envio;
@@ -224,7 +224,7 @@ async function obtenerTodos(req, res) {
     res.json(enviosCompletos);
 
   } catch (err) {
-    console.error('❌ Error al obtener envíos:', err);
+    console.error('Error al obtener envíos:', err);
     res.status(500).json({ error: 'Error al obtener envíos' });
   }
 }
@@ -274,7 +274,7 @@ async function obtenerPorId(req, res) {
         envio.rutaGeoJSON = ubicacion.rutaGeoJSON;
       }
     } catch (errMongo) {
-      console.warn("⚠️ Error obteniendo ubicación:", errMongo.message);
+      console.warn("Error obteniendo ubicación:", errMongo.message);
     }
 
     // Obtener asignaciones (particiones)
@@ -350,11 +350,10 @@ async function obtenerPorId(req, res) {
     return res.json(envio);
 
   } catch (err) {
-    console.error('❌ Error al obtener envío por ID:', err);
+    console.error('Error al obtener envío por ID:', err);
     return res.status(500).json({ error: 'Error al obtener el envío' });
   }
 }
-
 
 
 // 4.- Asignar transportista y vehículo (adaptado con partición)
@@ -382,7 +381,7 @@ async function asignarTransportistaYVehiculo(req, res) {
     const { estado_transportista, estado_vehiculo } = disponibilidad.recordset[0];
 
     if (estado_transportista !== 'Disponible' || estado_vehiculo !== 'Disponible') {
-      return res.status(400).json({ error: '❌ Transportista o vehículo no disponibles' });
+      return res.status(400).json({ error: 'Transportista o vehículo no disponibles' });
     }
 
     // Verificar existencia del envío
@@ -456,10 +455,10 @@ async function asignarTransportistaYVehiculo(req, res) {
     await pool.request().input('id', sql.Int, id_vehiculo)
       .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
 
-    res.json({ mensaje: '✅ Asignación registrada correctamente con carga y detalles completos' });
+    res.json({ mensaje: 'Asignación registrada correctamente con carga y detalles completos' });
 
   } catch (err) {
-    console.error('❌ Error al asignar:', err);
+    console.error('Error al asignar:', err);
     res.status(500).json({ error: 'Error al asignar transporte' });
   }
 }
@@ -491,7 +490,7 @@ async function asignarTransportistaYVehiculoAParticion(req, res) {
     const { estado_transportista, estado_vehiculo } = disponibilidad.recordset[0];
 
     if (estado_transportista !== 'Disponible' || estado_vehiculo !== 'Disponible') {
-      return res.status(400).json({ error: '❌ Transportista o vehículo no disponibles' });
+      return res.status(400).json({ error: 'Transportista o vehículo no disponibles' });
     }
 
     // Verificar existencia de la partición y obtener id_envio
@@ -527,13 +526,13 @@ async function asignarTransportistaYVehiculoAParticion(req, res) {
       .input('id', sql.Int, id_vehiculo)
       .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
 
-    // ✅ Actualizar el estado global del envío
+    // Actualizar el estado global del envío
     await actualizarEstadoGlobalEnvio(id_envio, pool);
 
-    res.json({ mensaje: '✅ Transportista y vehículo asignados correctamente a la partición' });
+    res.json({ mensaje: 'Transportista y vehículo asignados correctamente a la partición' });
 
   } catch (err) {
-    console.error('❌ Error al asignar a partición:', err);
+    console.error('Error al asignar a partición:', err);
     res.status(500).json({ error: 'Error interno al asignar a partición' });
   }
 }
@@ -549,12 +548,12 @@ async function obtenerMisEnvios(req, res) {
   }
 
   const userId = user.id;
-  console.log('📌 ID del usuario autenticado (mis-envios):', userId);
+  console.log('ID del usuario autenticado (mis-envios):', userId);
 
   try {
     const pool = await poolPromise;
 
-    // 1️⃣ Obtener envíos del usuario
+    // Obtener envíos del usuario
     const resultado = await pool.request()
       .input('id_usuario', sql.Int, userId)
       .query(`
@@ -569,7 +568,7 @@ async function obtenerMisEnvios(req, res) {
 
     const envios = resultado.recordset;
 
-    // 2️⃣ Enriquecer cada envío con particiones (asignaciones)
+    // Enriquecer cada envío con particiones (asignaciones)
     const enviosCompletos = await Promise.all(envios.map(async envio => {
       try {
         // UBICACIÓN desde MongoDB
@@ -653,7 +652,7 @@ async function obtenerMisEnvios(req, res) {
 
         envio.particiones = particiones;
       } catch (interno) {
-        console.warn("⚠️ Error enriqueciendo envío ID:", envio.id, interno.message);
+        console.warn("Error enriqueciendo envío ID:", envio.id, interno.message);
       }
 
       return envio;
@@ -662,7 +661,7 @@ async function obtenerMisEnvios(req, res) {
     return res.json(enviosCompletos);
 
   } catch (err) {
-    console.error('❌ Error al obtener tus envíos:', err);
+    console.error('Error al obtener tus envíos:', err);
     res.status(500).json({ error: 'Error al obtener tus envíos' });
   }
 }
@@ -682,7 +681,7 @@ async function iniciarViaje(req, res) {
     try {
         const pool = await poolPromise;
 
-        // 1️⃣ Obtener ID del transportista autenticado
+        // Obtener ID del transportista autenticado
         const transportistaRes = await pool.request()
             .input('id_usuario', sql.Int, userId)
             .query('SELECT id FROM Transportistas WHERE id_usuario = @id_usuario');
@@ -693,7 +692,7 @@ async function iniciarViaje(req, res) {
 
         const id_transportista = transportistaRes.recordset[0].id;
 
-        // 2️⃣ Verificar asignación válida
+        // Verificar asignación válida
         const asignacionRes = await pool.request()
             .input('id_asignacion', sql.Int, id_asignacion)
             .input('id_transportista', sql.Int, id_transportista)
@@ -711,7 +710,7 @@ async function iniciarViaje(req, res) {
         const asignacion = asignacionRes.recordset[0];
         const id_usuario_cliente = asignacion.id_usuario_cliente;
 
-        // 3️⃣ Verificar checklist por asignación
+        // Verificar checklist por asignación
         const checklistRes = await pool.request()
             .input('id_asignacion', sql.Int, id_asignacion)
             .query(`
@@ -722,7 +721,7 @@ async function iniciarViaje(req, res) {
             return res.status(400).json({ error: 'Debes completar el checklist antes de iniciar el viaje' });
         }
 
-        // 4️⃣ Actualizar asignación
+        // Actualizar asignación
         await pool.request()
             .input('estado', sql.NVarChar, 'En curso')
             .input('fecha_inicio', sql.DateTime, new Date())
@@ -733,7 +732,7 @@ async function iniciarViaje(req, res) {
                 WHERE id = @id
             `);
 
-        // 5️⃣ Actualizar estado de recursos
+        // Actualizar estado de recursos
         await pool.request()
             .input('id', sql.Int, asignacion.id_transportista)
             .query(`UPDATE Transportistas SET estado = 'En ruta' WHERE id = @id`);
@@ -742,7 +741,7 @@ async function iniciarViaje(req, res) {
             .input('id', sql.Int, asignacion.id_vehiculo)
             .query(`UPDATE Vehiculos SET estado = 'En ruta' WHERE id = @id`);
 
-        // 6️⃣ Actualizar estado global del envío
+        // Actualizar estado global del envío
         const asignaciones = await pool.request()
             .input('id_envio', sql.Int, asignacion.id_envio)
             .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
@@ -763,13 +762,13 @@ async function iniciarViaje(req, res) {
             .input('estado', sql.NVarChar, nuevoEstado)
             .query('UPDATE Envios SET estado = @estado WHERE id = @id_envio');
 
-        // 7️⃣ Generar QR automáticamente (si no existe)
+        // Generar QR automáticamente (si no existe)
         let qrToken = await QrToken.findOne({ id_asignacion });
 
         if (!qrToken) {
             const nuevoToken = uuidv4();
 
-            // 🔗 Construir URL completa para el QR
+            // Construir URL completa para el QR
             const tokenUrl = `${process.env.FRONTEND_BASE_URL || 'https://orgtrackprueba.netlify.app'}/login.html`;
 
             // Generar imagen QR en base64
@@ -782,13 +781,13 @@ async function iniciarViaje(req, res) {
                 token: nuevoToken,
                 imagenQR: qrBase64,
                 usado: false,
-                fecha_expiracion: new Date(Date.now() + 1000 * 60 * 60 * 24) // 24 horas
+                fecha_expiracion: new Date(Date.now() + 1000 * 60 * 60 * 24) 
             });
 
             await qrToken.save();
 
             res.json({
-                mensaje: '✅ Viaje iniciado correctamente para esta asignación',
+                mensaje: 'Viaje iniciado correctamente para esta asignación',
                 id_asignacion,
                 token: nuevoToken,
                 imagenQR: qrBase64,
@@ -797,7 +796,7 @@ async function iniciarViaje(req, res) {
         } else {
             // Si ya existe, solo devolvemos el QR existente
             res.json({
-                mensaje: '✅ Viaje iniciado correctamente para esta asignación (QR ya existía)',
+                mensaje: 'Viaje iniciado correctamente para esta asignación (QR ya existía)',
                 id_asignacion,
                 token: qrToken.token,
                 imagenQR: qrToken.imagenQR,
@@ -806,7 +805,7 @@ async function iniciarViaje(req, res) {
         }
 
     } catch (err) {
-        console.error('❌ Error al iniciar viaje:', err);
+        console.error('Error al iniciar viaje:', err);
         res.status(500).json({ error: 'Error al iniciar el viaje' });
     }
 }
@@ -821,7 +820,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
   try {
     const pool = await poolPromise;
 
-    // 1️⃣ Obtener ID del transportista autenticado
+    // Obtener ID del transportista autenticado
     const resultTransportista = await pool.request()
       .input('id_usuario', sql.Int, id_usuario)
       .query('SELECT id FROM Transportistas WHERE id_usuario = @id_usuario');
@@ -832,7 +831,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
 
     const id_transportista = resultTransportista.recordset[0].id;
 
-    // 2️⃣ Obtener asignaciones de este transportista
+    // Obtener asignaciones de este transportista
     const result = await pool.request()
       .input('id_transportista', sql.Int, id_transportista)
       .query(`
@@ -852,7 +851,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
 
     const asignaciones = result.recordset;
 
-    // 3️⃣ Enriquecer cada asignación
+    // Enriquecer cada asignación
     const enviosCompletos = await Promise.all(asignaciones.map(async asignacion => {
       const envio = { ...asignacion };
 
@@ -884,7 +883,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
           envio.rutaGeoJSON = ubicacion.rutaGeoJSON;
         }
       } catch (err) {
-        console.warn("⚠️ Error enriqueciendo envío ID:", asignacion.id_envio, err.message);
+        console.warn("Error enriqueciendo envío ID:", asignacion.id_envio, err.message);
       }
 
       return envio;
@@ -893,7 +892,7 @@ async function obtenerEnviosAsignadosTransportista(req, res) {
     res.json(enviosCompletos);
 
   } catch (err) {
-    console.error('❌ Error al obtener envíos del transportista:', err);
+    console.error('Error al obtener envíos del transportista:', err);
     res.status(500).json({ error: 'Error interno al obtener los envíos' });
   }
 }
@@ -913,7 +912,7 @@ async function finalizarEnvio(req, res) {
   try {
     const pool = await poolPromise;
 
-    // 1️⃣ Obtener ID del transportista autenticado
+    // Obtener ID del transportista autenticado
     const transportistaRes = await pool.request()
       .input('id_usuario', sql.Int, id_usuario)
       .query(`SELECT id FROM Transportistas WHERE id_usuario = @id_usuario`);
@@ -924,7 +923,7 @@ async function finalizarEnvio(req, res) {
 
     const id_transportista = transportistaRes.recordset[0].id;
 
-    // 2️⃣ Obtener asignación
+    // Obtener asignación
     const asignacionRes = await pool.request()
       .input('id', sql.Int, id_asignacion)
       .query(`SELECT * FROM AsignacionMultiple WHERE id = @id`);
@@ -935,7 +934,7 @@ async function finalizarEnvio(req, res) {
 
     const asignacion = asignacionRes.recordset[0];
 
-    // 3️⃣ Validar que le pertenece al transportista y esté en curso
+    // Validar que le pertenece al transportista y esté en curso
     if (asignacion.id_transportista !== id_transportista) {
       return res.status(403).json({ error: 'No tienes permiso para finalizar esta asignación' });
     }
@@ -944,7 +943,7 @@ async function finalizarEnvio(req, res) {
       return res.status(400).json({ error: 'Esta asignación no está en curso' });
     }
 
-    // 4️⃣ Validar que exista checklist de incidentes
+    // Validar que exista checklist de incidentes
     const checklistRes = await pool.request()
       .input('id_asignacion', sql.Int, id_asignacion)
       .query(`SELECT id FROM ChecklistIncidentesTransporte WHERE id_asignacion = @id_asignacion`);
@@ -953,13 +952,13 @@ async function finalizarEnvio(req, res) {
       return res.status(400).json({ error: 'Debes completar el checklist de incidentes antes de finalizar el viaje.' });
     }
 
-    // 5️⃣ Validar que exista firma en MongoDB
+    // Validar que exista firma en MongoDB
     const firma = await FirmaEnvio.findOne({ id_asignacion: id_asignacion });
     if (!firma) {
       return res.status(400).json({ error: 'Debes capturar la firma del cliente antes de finalizar el viaje.' });
     }
 
-    // 6️⃣ Actualizar asignación como finalizada
+    // Actualizar asignación como finalizada
     await pool.request()
       .input('id', sql.Int, id_asignacion)
       .input('estado', sql.NVarChar, 'Entregado')
@@ -970,7 +969,7 @@ async function finalizarEnvio(req, res) {
         WHERE id = @id
       `);
 
-    // 7️⃣ Liberar transportista y vehículo
+    // Liberar transportista y vehículo
     await pool.request()
       .input('id', sql.Int, asignacion.id_transportista)
       .query(`UPDATE Transportistas SET estado = 'Disponible' WHERE id = @id`);
@@ -979,7 +978,7 @@ async function finalizarEnvio(req, res) {
       .input('id', sql.Int, asignacion.id_vehiculo)
       .query(`UPDATE Vehiculos SET estado = 'Disponible' WHERE id = @id`);
 
-    // 8️⃣ ACTUALIZAR ESTADO GLOBAL DEL ENVÍO
+    // ACTUALIZAR ESTADO GLOBAL DEL ENVÍO
     const asignaciones = await pool.request()
       .input('id_envio', sql.Int, asignacion.id_envio)
       .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
@@ -1004,10 +1003,10 @@ async function finalizarEnvio(req, res) {
       .input('estado', sql.NVarChar, nuevoEstado)
       .query('UPDATE Envios SET estado = @estado WHERE id = @id_envio');
 
-    res.json({ mensaje: '✅ Asignación finalizada correctamente' });
+    res.json({ mensaje: 'Asignación finalizada correctamente' });
 
   } catch (err) {
-    console.error('❌ Error al finalizar asignación:', err);
+    console.error('Error al finalizar asignación:', err);
     res.status(500).json({ error: 'Error interno al finalizar asignación' });
   }
 }
@@ -1086,10 +1085,10 @@ async function registrarChecklistCondiciones(req, res) {
         )
       `);
 
-    res.status(201).json({ mensaje: '✅ Checklist de condiciones registrado correctamente' });
+    res.status(201).json({ mensaje: 'Checklist de condiciones registrado correctamente' });
 
   } catch (err) {
-    console.error('❌ Error al registrar checklist de condiciones:', err);
+    console.error('Error al registrar checklist de condiciones:', err);
     res.status(500).json({ error: 'Error interno al registrar checklist' });
   }
 }
@@ -1108,7 +1107,7 @@ async function registrarChecklistIncidentes(req, res) {
   try {
     const pool = await poolPromise;
 
-    // 1️⃣ Validar que la asignación exista y pertenezca al transportista autenticado
+    // Validar que la asignación exista y pertenezca al transportista autenticado
     const validacion = await pool.request()
       .input('id', sql.Int, id_asignacion)
       .query(`
@@ -1128,12 +1127,12 @@ async function registrarChecklistIncidentes(req, res) {
       return res.status(403).json({ error: 'No tienes permiso para esta asignación' });
     }
 
-    // 🛠️ CAMBIO: Ahora permitimos registrar checklist cuando la asignación esté EN CURSO
+    // Ahora permitimos registrar checklist cuando la asignación esté EN CURSO
     if (asignacion.estado !== 'En curso') {
       return res.status(400).json({ error: 'Solo puedes registrar el checklist si el viaje está en curso' });
     }
 
-    // 2️⃣ Validar si ya existe un checklist de incidentes para esta asignación
+    // Validar si ya existe un checklist de incidentes para esta asignación
     const yaExiste = await pool.request()
       .input('id_asignacion', sql.Int, id_asignacion)
       .query(`SELECT id FROM ChecklistIncidentesTransporte WHERE id_asignacion = @id_asignacion`);
@@ -1142,7 +1141,7 @@ async function registrarChecklistIncidentes(req, res) {
       return res.status(400).json({ error: 'El checklist ya fue registrado' });
     }
 
-    // 3️⃣ Insertar el nuevo checklist de incidentes
+    // Insertar el nuevo checklist de incidentes
     await pool.request()
       .input('id_asignacion', sql.Int, id_asignacion)
       .input('retraso', sql.Bit, checklist.retraso)
@@ -1171,10 +1170,10 @@ async function registrarChecklistIncidentes(req, res) {
         )
       `);
 
-    res.status(201).json({ mensaje: '✅ Checklist de incidentes registrado correctamente' });
+    res.status(201).json({ mensaje: 'Checklist de incidentes registrado correctamente' });
 
   } catch (err) {
-    console.error('❌ Error al guardar checklist de incidentes:', err);
+    console.error('Error al guardar checklist de incidentes:', err);
     res.status(500).json({ error: 'Error interno al registrar el checklist' });
   }
 }
@@ -1184,14 +1183,14 @@ async function registrarChecklistIncidentes(req, res) {
 
 
 async function actualizarEstadoGlobalEnvio(id_envio, pool) {
-  // 1️⃣ Obtener todos los estados de las asignaciones del envío
+  // Obtener todos los estados de las asignaciones del envío
   const asignaciones = await pool.request()
     .input('id_envio', sql.Int, id_envio)
     .query(`SELECT estado FROM AsignacionMultiple WHERE id_envio = @id_envio`);
 
   const estados = asignaciones.recordset.map(a => a.estado);
 
-  // 2️⃣ Determinar el estado global del envío
+  // Determinar el estado global del envío
   let nuevoEstado = 'Asignado';
 
   if (estados.length === 0) {
@@ -1206,7 +1205,7 @@ async function actualizarEstadoGlobalEnvio(id_envio, pool) {
     nuevoEstado = 'En curso';
   }
   
-  // 3️⃣ Actualizar estado del envío
+  // Actualizar estado del envío
   await pool.request()
     .input('id_envio', sql.Int, id_envio)
     .input('estado', sql.NVarChar, nuevoEstado)
@@ -1228,7 +1227,7 @@ async function generarDocumentoEnvio(req, res) {
   try {
     const pool = await poolPromise;
 
-    // 1️⃣ Obtener datos del envío
+    // Obtener datos del envío
     const envioRes = await pool.request()
       .input('id', sql.Int, id_envio)
       .query(`
@@ -1244,25 +1243,25 @@ async function generarDocumentoEnvio(req, res) {
 
     const envio = envioRes.recordset[0];
 
-    // 🔒 Validar si el envío está completamente ENTREGADO
+    // Validar si el envío está completamente ENTREGADO
     if (envio.estado !== 'Entregado') {
       return res.status(400).json({ error: 'El documento solo se puede generar cuando el envío esté completamente entregado.' });
     }
 
-    // 🔒 Validar si el cliente tiene permiso (si no es admin)
+    // Validar si el cliente tiene permiso (si no es admin)
     if (rol !== 'admin' && envio.id_usuario !== id_usuario) {
       return res.status(403).json({ error: 'No tienes acceso a este envío' });
     }
 
-    // 2️⃣ Obtener ubicación (MongoDB)
+    // Obtener ubicación (MongoDB)
     let ubicacion = null;
     try {
       ubicacion = await Direccion.findById(envio.id_ubicacion_mongo).lean();
     } catch (errMongo) {
-      console.warn('⚠️ Error obteniendo ubicación MongoDB:', errMongo.message);
+      console.warn('Error obteniendo ubicación MongoDB:', errMongo.message);
     }
 
-    // 3️⃣ Obtener particiones (asignaciones)
+    // Obtener particiones (asignaciones)
     const asignacionesRes = await pool.request()
       .input('id_envio', sql.Int, id_envio)
       .query(`
@@ -1284,7 +1283,7 @@ async function generarDocumentoEnvio(req, res) {
 
     const asignaciones = asignacionesRes.recordset;
 
-    // 4️⃣ Obtener cargas, checklist y firma por cada asignación
+    // Obtener cargas, checklist y firma por cada asignación
     const particiones = await Promise.all(asignaciones.map(async asignacion => {
       // Cargas
       const cargasRes = await pool.request()
@@ -1352,7 +1351,7 @@ async function generarDocumentoEnvio(req, res) {
       };
     }));
 
-    // 5️⃣ Preparar respuesta final
+    // Preparar respuesta final
     res.json({
       id_envio: envio.id,
       nombre_cliente: `${envio.nombre_cliente} ${envio.apellido_cliente}`,
@@ -1366,7 +1365,7 @@ async function generarDocumentoEnvio(req, res) {
     });
 
   } catch (error) {
-    console.error('❌ Error al generar documento:', error);
+    console.error('Error al generar documento:', error);
     res.status(500).json({ error: 'Error interno al generar documento' });
   }
 }
@@ -1386,7 +1385,7 @@ async function generarDocumentoParticion(req, res) {
   try {
     const pool = await poolPromise;
 
-    // 1️⃣ Obtener asignación + datos del envío
+    // Obtener asignación + datos del envío
     const asignacionRes = await pool.request()
       .input('id_asignacion', sql.Int, id_asignacion)
       .query(`
@@ -1420,20 +1419,20 @@ async function generarDocumentoParticion(req, res) {
 
     const asignacion = asignacionRes.recordset[0];
 
-    // 2️⃣ Validar permisos
+    // Validar permisos
     if (rol !== 'admin' && asignacion.id_usuario_cliente !== id_usuario) {
       return res.status(403).json({ error: 'No tienes acceso a esta asignación' });
     }
 
-    // 3️⃣ Obtener ubicación (MongoDB)
+    // Obtener ubicación (MongoDB)
     let ubicacion = null;
     try {
       ubicacion = await Direccion.findById(asignacion.id_ubicacion_mongo).lean();
     } catch (errMongo) {
-      console.warn('⚠️ Error obteniendo ubicación MongoDB:', errMongo.message);
+      console.warn('Error obteniendo ubicación MongoDB:', errMongo.message);
     }
 
-    // 4️⃣ Obtener cargas asociadas a esta asignación
+    // Obtener cargas asociadas a esta asignación
     const cargasRes = await pool.request()
       .input('id_asignacion', sql.Int, id_asignacion)
       .query(`
@@ -1443,10 +1442,10 @@ async function generarDocumentoParticion(req, res) {
         WHERE ac.id_asignacion = @id_asignacion
       `);
 
-    // 5️⃣ Obtener firma (MongoDB)
+    // Obtener firma (MongoDB)
     const firma = await FirmaEnvio.findOne({ id_asignacion }).lean();
 
-    // 6️⃣ Obtener checklist (si es admin)
+    // Obtener checklist (si es admin)
     let checklistCondiciones = null;
     let checklistIncidentes = null;
 
@@ -1462,7 +1461,7 @@ async function generarDocumentoParticion(req, res) {
       checklistIncidentes = incidentesRes.recordset[0] || null;
     }
 
-    // 7️⃣ Preparar respuesta final
+    // Preparar respuesta final
     res.json({
       id_envio: asignacion.id_envio,
       nombre_cliente: `${asignacion.nombre_cliente} ${asignacion.apellido_cliente}`,
@@ -1507,7 +1506,7 @@ async function generarDocumentoParticion(req, res) {
     });
 
   } catch (error) {
-    console.error('❌ Error al generar documento de partición:', error);
+    console.error('Error al generar documento de partición:', error);
     res.status(500).json({ error: 'Error interno al generar documento' });
   }
 }
@@ -1526,7 +1525,7 @@ async function obtenerParticionesEnCursoCliente(req, res) {
     try {
         const pool = await poolPromise;
 
-        // 1️⃣ Obtener particiones en curso del cliente
+        // Obtener particiones en curso del cliente
         const particionesRes = await pool.request()
             .input('id_usuario', sql.Int, userId)
             .query(`
@@ -1546,7 +1545,7 @@ async function obtenerParticionesEnCursoCliente(req, res) {
             `);
 
         const particiones = await Promise.all(particionesRes.recordset.map(async particion => {
-            // ✅ Obtener ubicación (MongoDB)
+            // Obtener ubicación (MongoDB)
             let nombre_origen = "—";
             let nombre_destino = "—";
             try {
@@ -1556,10 +1555,10 @@ async function obtenerParticionesEnCursoCliente(req, res) {
                     nombre_destino = ubicacion.nombreDestino || "—";
                 }
             } catch (errMongo) {
-                console.warn("⚠️ Error obteniendo ubicación MongoDB:", errMongo.message);
+                console.warn("Error obteniendo ubicación MongoDB:", errMongo.message);
             }
 
-            // ✅ Obtener cargas
+            // Obtener cargas
             const cargasRes = await pool.request()
                 .input('id_asignacion', sql.Int, particion.id_asignacion)
                 .query(`
@@ -1598,7 +1597,7 @@ async function obtenerParticionesEnCursoCliente(req, res) {
         res.json(particiones);
 
     } catch (error) {
-        console.error('❌ Error al obtener particiones en curso:', error);
+        console.error('Error al obtener particiones en curso:', error);
         res.status(500).json({ error: 'Error interno al obtener particiones en curso' });
     }
 }

@@ -10,14 +10,14 @@ async function crearEnvioCompletoAdmin(req, res) {
       return res.status(400).json({ error: 'Faltan datos para crear el envío' });
     }
 
-    // 1️⃣ Guardar ubicación MongoDB
+    // Guardar ubicación MongoDB
     const nuevaUbicacion = new Direccion({ ...ubicacion, id_usuario: id_usuario_cliente });
     await nuevaUbicacion.save();
     const id_ubicacion_mongo = nuevaUbicacion._id.toString();
 
     const pool = await poolPromise;
 
-    // 2️⃣ Insertar envío principal
+    // Insertar envío principal
     const envioResult = await pool.request()
       .input('id_usuario', sql.Int, id_usuario_cliente)
       .input('id_ubicacion_mongo', sql.NVarChar, id_ubicacion_mongo)
@@ -29,7 +29,7 @@ async function crearEnvioCompletoAdmin(req, res) {
 
     const id_envio = envioResult.recordset[0].id;
 
-    // 3️⃣ Procesar cada partición
+    // Procesar cada partición
     for (const bloque of particiones) {
       const { cargas, recogidaEntrega, id_tipo_transporte, id_transportista, id_vehiculo } = bloque;
 
@@ -37,7 +37,7 @@ async function crearEnvioCompletoAdmin(req, res) {
         return res.status(400).json({ error: 'Faltan datos en una de las particiones del envío' });
       }
 
-      // 4️⃣ Insertar RecogidaEntrega
+      // Insertar RecogidaEntrega
       const r = recogidaEntrega;
       const recogidaResult = await pool.request()
         .input('fecha_recogida', sql.Date, r.fecha_recogida)
@@ -52,7 +52,7 @@ async function crearEnvioCompletoAdmin(req, res) {
 
       const id_recogida_entrega = recogidaResult.recordset[0].id;
 
-      // 5️⃣ Verificar disponibilidad
+      // Verificar disponibilidad
       const validacion = await pool.request()
         .input('t', sql.Int, id_transportista)
         .input('v', sql.Int, id_vehiculo)
@@ -67,7 +67,7 @@ async function crearEnvioCompletoAdmin(req, res) {
         return res.status(400).json({ error: `T${id_transportista}, V${id_vehiculo} no disponibles` });
       }
 
-      // 6️⃣ Insertar Asignación
+      // Insertar Asignación
       const asignacionRes = await pool.request()
         .input('id_envio', sql.Int, id_envio)
         .input('id_transportista', sql.Int, id_transportista)
@@ -82,13 +82,13 @@ async function crearEnvioCompletoAdmin(req, res) {
 
       const id_asignacion = asignacionRes.recordset[0].id;
 
-      // 7️⃣ Marcar transportista y vehículo como no disponibles
+      // Marcar transportista y vehículo como no disponibles
       await pool.request().input('id', sql.Int, id_transportista)
         .query(`UPDATE Transportistas SET estado = 'No Disponible' WHERE id = @id`);
       await pool.request().input('id', sql.Int, id_vehiculo)
         .query(`UPDATE Vehiculos SET estado = 'No Disponible' WHERE id = @id`);
 
-      // 8️⃣ Insertar cargas + asignación
+      // Insertar cargas + asignación
       for (const carga of cargas) {
         const cargaRes = await pool.request()
           .input('tipo', sql.NVarChar, carga.tipo)
@@ -103,7 +103,7 @@ async function crearEnvioCompletoAdmin(req, res) {
 
         const id_carga = cargaRes.recordset[0].id;
 
-        // 🔗 Relacionar carga con asignación (única relación activa)
+        // Relacionar carga con asignación (única relación activa)
         await pool.request()
           .input('id_asignacion', sql.Int, id_asignacion)
           .input('id_carga', sql.Int, id_carga)
@@ -112,12 +112,12 @@ async function crearEnvioCompletoAdmin(req, res) {
     }
 
     return res.status(201).json({
-      mensaje: '✅ Envío creado con múltiples particiones, cargas y asignaciones',
+      mensaje: 'Envío creado con múltiples particiones, cargas y asignaciones',
       id_envio
     });
 
   } catch (err) {
-    console.error('❌ Error al crear envío particionado (admin):', err);
+    console.error('Error al crear envío particionado (admin):', err);
     return res.status(500).json({ error: 'Error interno al crear envío (admin)' });
   }
 }
@@ -147,7 +147,7 @@ async function buscarCliente(req, res) {
   
       return res.json(resultado.recordset);
     } catch (err) {
-      console.error('❌ Error al buscar cliente:', err);
+      console.error('Error al buscar cliente:', err);
       return res.status(500).json({ error: 'Error interno al buscar cliente' });
     }
   }
@@ -210,7 +210,7 @@ async function obtenerHistorialCliente(req, res) {
 
     res.json(historial);
   } catch (err) {
-    console.error('❌ Error al obtener historial del cliente:', err);
+    console.error('Error al obtener historial del cliente:', err);
     res.status(500).json({ error: 'Error al obtener historial del cliente' });
   }
 }
@@ -293,7 +293,7 @@ async function reutilizarEnvioAnterior(req, res) {
     });
 
   } catch (err) {
-    console.error('❌ Error al reutilizar envío:', err);
+    console.error('Error al reutilizar envío:', err);
     res.status(500).json({ error: 'Error al obtener datos del envío' });
   }
 }

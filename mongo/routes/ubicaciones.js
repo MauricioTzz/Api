@@ -34,7 +34,7 @@ router.get('/:id', verificarToken, async (req, res) => {
 router.post('/', verificarToken, async (req, res) => {
   try {
     const nuevaDireccion = new Direccion({
-      id_usuario: req.usuario.id, // ✅ Asociar con el usuario logueado
+      id_usuario: req.usuario.id, // Asociar con el usuario logueado
       nombreOrigen: req.body.nombreOrigen,
       nombreDestino: req.body.nombreDestino,
       coordenadasOrigen: req.body.coordenadasOrigen,

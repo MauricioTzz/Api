@@ -31,7 +31,7 @@ async function register(req, res) {
 
     res.status(201).json({ mensaje: 'Cliente registrado correctamente' });
   } catch (err) {
-    console.error('❌ Error en registro:', err);
+    console.error('Error en registro:', err);
     res.status(500).json({ error: 'Error en el servidor al registrar' });
   }
 }
@@ -55,7 +55,7 @@ async function login(req, res) {
     const token = jwt.sign({ id: usuario.id, rol: usuario.rol }, SECRET_KEY, { expiresIn: '4h' });
     res.json({ token, usuario: { id: usuario.id, nombre: usuario.nombre, rol: usuario.rol } });
   } catch (err) {
-    console.error('❌ Error en login:', err);
+    console.error('Error en login:', err);
     res.status(500).json({ error: 'Error en el servidor al iniciar sesión' });
   }
 }

@@ -30,11 +30,11 @@ async function guardarFirmaEnvio(req, res) {
     await nuevaFirma.save();
 
     res.status(201).json({
-      mensaje: '✅ Firma guardada correctamente',
+      mensaje: 'Firma guardada correctamente',
       id_asignacion
     });
   } catch (error) {
-    console.error('❌ Error al guardar firma:', error);
+    console.error('Error al guardar firma:', error);
     res.status(500).json({ error: 'Error interno al guardar la firma' });
   }
 }

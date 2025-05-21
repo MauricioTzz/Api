@@ -8,7 +8,7 @@ async function obtenerTodos(req, res) {
     const result = await pool.request().query('SELECT * FROM Vehiculos');
     res.json(result.recordset);
   } catch (err) {
-    console.error('❌ Error al obtener vehículos:', err);
+    console.error('Error al obtener vehículos:', err);
     res.status(500).json({ error: 'Error al obtener vehículos' });
   }
 }
@@ -27,7 +27,7 @@ async function obtenerPorId(req, res) {
 
     res.json(result.recordset[0]);
   } catch (err) {
-    console.error('❌ Error al obtener vehículo:', err);
+    console.error('Error al obtener vehículo:', err);
     res.status(500).json({ error: 'Error al obtener vehículo' });
   }
 }
@@ -52,7 +52,7 @@ async function crear(req, res) {
 
     res.status(201).json({ mensaje: 'Vehículo creado correctamente' });
   } catch (err) {
-    console.error('❌ Error al crear vehículo:', err);
+    console.error('Error al crear vehículo:', err);
     res.status(500).json({ error: 'Error al crear vehículo' });
   }
 }
@@ -78,7 +78,7 @@ async function editar(req, res) {
 
     res.json({ mensaje: 'Vehículo actualizado correctamente' });
   } catch (err) {
-    console.error('❌ Error al editar vehículo:', err);
+    console.error('Error al editar vehículo:', err);
     res.status(500).json({ error: 'Error al editar vehículo' });
   }
 }
@@ -97,7 +97,7 @@ async function eliminar(req, res) {
 
     res.json({ mensaje: 'Vehículo eliminado correctamente' });
   } catch (err) {
-    console.error('❌ Error al eliminar vehículo:', err);
+    console.error('Error al eliminar vehículo:', err);
     res.status(500).json({ error: 'Error al eliminar vehículo' });
   }
 }

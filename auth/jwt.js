@@ -1,6 +1,6 @@
 // /auth/jwt.js
 const jwt = require('jsonwebtoken');
-const SECRET_KEY = 'OrgTrackSuperSecreta2025'; // ✅ Reemplazar por una variable de entorno en producción
+const SECRET_KEY = 'OrgTrackSuperSecreta2025'; // Reemplazar por una variable de entorno en producción
 
 // Middleware: verifica si el token es válido
 function verificarToken(req, res, next) {

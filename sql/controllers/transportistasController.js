@@ -19,7 +19,7 @@ async function obtenerTodos(req, res) {
     `);
     res.json(result.recordset);
   } catch (err) {
-    console.error('❌ Error al obtener transportistas:', err);
+    console.error('Error al obtener transportistas:', err);
     res.status(500).json({ error: 'Error al obtener transportistas' });
   }
 }
@@ -38,7 +38,7 @@ async function obtenerPorId(req, res) {
 
     res.json(result.recordset[0]);
   } catch (err) {
-    console.error('❌ Error al obtener transportista:', err);
+    console.error('Error al obtener transportista:', err);
     res.status(500).json({ error: 'Error al obtener transportista' });
   }
 }
@@ -62,7 +62,7 @@ async function crear(req, res) {
 
     res.status(201).json({ mensaje: 'Transportista creado correctamente' });
   } catch (err) {
-    console.error('❌ Error al crear transportista:', err);
+    console.error('Error al crear transportista:', err);
     res.status(500).json({ error: 'Error al crear transportista' });
   }
 }
@@ -87,7 +87,7 @@ async function editar(req, res) {
 
     res.json({ mensaje: 'Transportista actualizado correctamente' });
   } catch (err) {
-    console.error('❌ Error al editar transportista:', err);
+    console.error('Error al editar transportista:', err);
     res.status(500).json({ error: 'Error al editar transportista' });
   }
 }
@@ -120,7 +120,7 @@ async function eliminar(req, res) {
 
     res.json({ mensaje: 'Transportista y usuario eliminados correctamente' });
   } catch (err) {
-    console.error('❌ Error al eliminar transportista:', err);
+    console.error('Error al eliminar transportista:', err);
     res.status(500).json({ error: 'Error al eliminar transportista' });
   }
 }
@@ -155,9 +155,9 @@ async function crearTransportistaCompleto(req, res) {
         UPDATE Usuarios SET rol = @rol WHERE id = @id_usuario
       `);
 
-    res.status(201).json({ mensaje: '✅ Transportista creado y rol actualizado correctamente' });
+    res.status(201).json({ mensaje: 'Transportista creado y rol actualizado correctamente' });
   } catch (err) {
-    console.error('❌ Error al crear transportista completo:', err);
+    console.error('Error al crear transportista completo:', err);
     res.status(500).json({ error: 'Error al crear transportista completo' });
   }
 }
