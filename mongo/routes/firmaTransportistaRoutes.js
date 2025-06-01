@@ -4,5 +4,6 @@ const { guardarFirmaTransportista } = require('../controllers/firmaTransportista
 
 // Firma del transportista (sin autenticación)
 router.post('/firma-transportista/:id_asignacion', guardarFirmaTransportista);
+router.get('/firma-transportista/:id_asignacion', obtenerFirmaPorAsignacion);
 
 module.exports = router;

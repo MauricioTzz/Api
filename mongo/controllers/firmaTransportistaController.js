@@ -32,6 +32,28 @@ async function guardarFirmaTransportista(req, res) {
   }
 }
 
+async function obtenerFirmaPorAsignacion(req, res) {
+  const id_asignacion = parseInt(req.params.id_asignacion);
+
+  if (isNaN(id_asignacion)) {
+    return res.status(400).json({ error: 'ID de asignación inválido' });
+  }
+
+  try {
+    const firma = await FirmaTransportista.findOne({ id_asignacion });
+    if (!firma) {
+      return res.status(404).json({ error: 'No se encontró una firma para esta asignación' });
+    }
+
+    res.status(200).json(firma);
+  } catch (err) {
+    console.error('Error al obtener firma del transportista:', err);
+    res.status(500).json({ error: 'Error interno al obtener la firma' });
+  }
+}
+
+
 module.exports = {
-  guardarFirmaTransportista
+  guardarFirmaTransportista,
+  obtenerFirmaPorAsignacion
 };
