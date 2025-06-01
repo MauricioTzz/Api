@@ -1304,6 +1304,8 @@ async function generarDocumentoEnvio(req, res) {
       // Firma
       const firma = await FirmaEnvio.findOne({ id_asignacion: asignacion.id }).lean();
 
+      const firmaTransportista = await FirmaTransportista.findOne({ id_asignacion: asignacion.id }).lean();
+
       // Checklist (solo admin)
       let checklistCondiciones = null;
       let checklistIncidentes = null;
@@ -1351,6 +1353,7 @@ async function generarDocumentoEnvio(req, res) {
         },
         recogidaEntrega,
         cargas: cargasRes.recordset,
+        firmaTransportista: firmaTransportista ? firmaTransportista.imagenFirma : null,
         firma: firma ? firma.imagenFirma : null,
         checklistCondiciones,
         checklistIncidentes
@@ -1451,6 +1454,9 @@ async function generarDocumentoParticion(req, res) {
     // Obtener firma (MongoDB)
     const firma = await FirmaEnvio.findOne({ id_asignacion }).lean();
 
+    // Obtener firma del transportista (MongoDB)
+    const firmaTransportista = await FirmaTransportista.findOne({ id_asignacion }).lean();
+    
     // Obtener checklist (si es admin)
     let checklistCondiciones = null;
     let checklistIncidentes = null;
@@ -1506,6 +1512,7 @@ async function generarDocumentoParticion(req, res) {
         },
         cargas: cargasRes.recordset,
         firma: firma ? firma.imagenFirma : null,
+        firma_transportista: firmaTransportista ? firmaTransportista.imagenFirma : null,
         checklistCondiciones,
         checklistIncidentes
       }

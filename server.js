@@ -44,7 +44,6 @@ app.use('/api/envios/admin', rutasEnviosAdmin);
 app.use('/api/envios', rutasFirmasEnvio);
 app.use('/api/envios', rutasFirmasTransportista);
 
-
 app.post('/api/auth/test', (req, res) => {
   res.json({ mensaje: 'Test OK' });
 });
