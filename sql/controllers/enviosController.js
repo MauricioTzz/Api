@@ -1,6 +1,7 @@
 const { sql, poolPromise } = require('../../config/sqlserver');
 const Direccion = require('../../mongo/models/ubicacion');
 const FirmaEnvio = require('../../mongo/models/firmaEnvio');
+const FirmaTransportista = require('../../mongo/models/firmaTransportista');
 const QrToken = require('../../mongo/models/qrToken');  
 const { v4: uuidv4 } = require('uuid');  // para generar tokens únicos
 const qrcode = require('qrcode');  // para generar las imágenes QR
@@ -956,6 +957,11 @@ async function finalizarEnvio(req, res) {
     const firma = await FirmaEnvio.findOne({ id_asignacion: id_asignacion });
     if (!firma) {
       return res.status(400).json({ error: 'Debes capturar la firma del cliente antes de finalizar el viaje.' });
+    }
+    // Validar que exista firma en MongoDB (transportista)
+    const firmaTransportista = await FirmaTransportista.findOne({ id_asignacion });
+    if (!firmaTransportista) {
+      return res.status(400).json({ error: 'Debes capturar tu firma como transportista antes de finalizar el viaje.'});
     }
 
     // Actualizar asignación como finalizada

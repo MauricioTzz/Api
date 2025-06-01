@@ -14,8 +14,8 @@ const rutasUbicaciones = require('./mongo/routes/ubicaciones');
 const rutasFirmasEnvio = require('./mongo/routes/firmaEnvioRoutes');
 
 const rutasQrTokens = require('./mongo/routes/qrRoutes');
-
 const rutasEnviosAdmin = require('./sql/routes/enviosAdminRoutes');
+const rutasFirmasTransportista = require('./mongo/routes/firmaTransportistaRoutes');
 
 
 conectarMongo();
@@ -42,6 +42,7 @@ app.use('/api/qr', rutasQrTokens);
 
 app.use('/api/envios/admin', rutasEnviosAdmin);
 app.use('/api/envios', rutasFirmasEnvio);
+app.use('/api/envios', rutasFirmasTransportista);
 
 
 app.post('/api/auth/test', (req, res) => {
